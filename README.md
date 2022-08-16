@@ -8,7 +8,7 @@
 -https://www.mssqltips.com/                                 <br/>
 -https://www.sqlshack.com/                                  <br/>
 -https://pt.stackoverflow.com/questions/tagged/sql-server   <br/>
--And many others blogers                                    <br/>
+-And many others blogs                                    <br/>
 ✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨<br/>
 
 
