@@ -1,0 +1,17 @@
+SELECT 
+   GETDATE() AS [Current Time],
+   [des].[login_name] AS [Login Name],
+   DB_NAME ([dtdt].database_id) AS [Database Name],
+   [dtdt].[database_transaction_begin_time] AS [Transaction Begin Time],
+   [dtdt].[database_transaction_log_bytes_used] AS [Log Used Bytes],
+   [dtdt].[database_transaction_log_bytes_reserved] AS [Log Reserved Bytes],
+   des.session_id, -- Adicionado manualmente
+   SUBSTRING([dest].text, [der].statement_start_offset/2 + 1,(CASE WHEN [der].statement_end_offset = -1 THEN LEN(CONVERT(nvarchar(max),[dest].text)) * 2 ELSE [der].statement_end_offset END - [der].statement_start_offset)/2) as [Query Text]
+FROM 
+   sys.dm_tran_database_transactions [dtdt]
+   INNER JOIN sys.dm_tran_session_transactions [dtst] ON  [dtst].[transaction_id] = [dtdt].[transaction_id]
+   INNER JOIN sys.dm_exec_sessions [des] ON  [des].[session_id] = [dtst].[session_id]
+   INNER JOIN sys.dm_exec_connections [dec] ON   [dec].[session_id] = [dtst].[session_id]
+   LEFT OUTER JOIN sys.dm_exec_requests [der] ON [der].[session_id] = [dtst].[session_id]
+   CROSS APPLY sys.dm_exec_sql_text ([dec].[most_recent_sql_handle]) AS [dest]
+GO
