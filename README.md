@@ -4,11 +4,11 @@
 
 <br/>
 ✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨<br/>
-✨-https://www.sqlservercentral.com/blogs                     ✨<br/>
-✨-https://www.mssqltips.com/                                 ✨<br/>
-✨-https://www.sqlshack.com/                                  ✨<br/>
-✨-https://pt.stackoverflow.com/questions/tagged/sql-server   ✨<br/>
-✨-And many others blogers                                    ✨<br/>
+-https://www.sqlservercentral.com/blogs                     <br/>
+-https://www.mssqltips.com/                                 <br/>
+-https://www.sqlshack.com/                                  <br/>
+-https://pt.stackoverflow.com/questions/tagged/sql-server   <br/>
+-And many others blogers                                    <br/>
 ✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨<br/>
 
 
