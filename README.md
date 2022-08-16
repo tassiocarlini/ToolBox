@@ -1,6 +1,8 @@
 - 👋 Hi, I’m @tassiocarlini.
 - 💞️ I’m looking to collaborate on MSSQL. 
 - 👋 All Queries there is a merger with community posts and mine modifications.
+
+
 ✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨
 ✨-https://www.sqlservercentral.com/blogs                     ✨
 ✨-https://www.mssqltips.com/                                 ✨
