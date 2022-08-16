@@ -1,4 +1,4 @@
---
+--VERSION 1
 SELECT      OBJECT_SCHEMA_NAME(obj.object_id) SchemaName, obj.name TableName, 
             stat.name, modification_counter, 
             [rows], rows_sampled, rows_sampled* 100 / [rows] AS [% Rows Sampled],
@@ -10,7 +10,7 @@ WHERE       obj.is_ms_shipped = 0
 ORDER BY    modification_counter DESC
 
 
---
+--VERSION 2
 SELECT stats.name AS StatisticsName,
        OBJECT_SCHEMA_NAME(stats.object_id) AS SchemaName,
        OBJECT_NAME(stats.object_id) AS TableName,
