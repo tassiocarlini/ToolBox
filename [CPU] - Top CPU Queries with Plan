@@ -1,3 +1,4 @@
+-- MISSING INDEX
 -- Captures the Total CPU time spent by a query along with the query plan and total executions
 -- https://docs.microsoft.com/EN-US/troubleshoot/sql/performance/troubleshoot-high-cpu-usage-issues
 SELECT
