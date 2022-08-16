@@ -1,6 +1,4 @@
 - 👋 Hi, I’m @tassiocarlini
-- 👀 I’m interested in ...
-- 🌱 I’m currently learning Python
 - 💞️ I’m looking to collaborate on MSSQL 
 
 <!---
