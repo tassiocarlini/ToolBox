@@ -7,7 +7,7 @@
 -https://www.sqlservercentral.com/blogs                     <br/>
 -https://www.mssqltips.com/                                 <br/>
 -https://www.sqlshack.com/                                  <br/>
--https://pt.stackoverflow.com/questions/tagged/sql-server   <br/>
+-https://en.stackoverflow.com/questions/tagged/sql-server   <br/>
 -And many others blogs                                    <br/>
 ✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨<br/>
 
