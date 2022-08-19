@@ -1,0 +1,12 @@
+-- before start, set statistics profile on session index are creating
+SET STATISTICS PROFILE ON
+
+
+-- 
+SELECT node_id,physical_operator_name, SUM(row_count) row_count,
+  SUM(estimate_row_count) AS estimate_row_count,
+  CAST(SUM(row_count)*100 AS float)/ case when SUM(estimate_row_count)   = 0 then 1 else SUM(estimate_row_count)  end
+  FROM sys.dm_exec_query_profiles   
+WHERE session_id=57   -- session index
+GROUP BY node_id,physical_operator_name  
+ORDER BY node_id;
