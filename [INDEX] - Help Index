@@ -90,8 +90,7 @@ where t.name = @Nm_Tabela
 
 
 
-select B.index_name, B.index_description,B.index_keys,C.includedColumns,A.user_seeks,A.user_scans,A.user_Updates,A.Ultimo_acesso,A.fill_factor,D.IndexSizeKB,
-	'alter index '+B.index_name+ ' on Lancamento REBUILD with(FILLFACTOR=90,DATA_COMPRESSION=ROW)'
+select B.index_name, B.index_description,B.index_keys,C.includedColumns,A.user_seeks,A.user_scans,A.user_Updates,A.Ultimo_acesso,A.fill_factor,D.IndexSizeKB
 from  #Temp_Helpindex B 
 	left join #Temp_Include C on B.index_name = C.IndexName collate Latin1_General_BIN
 	left join #Temp_Utilizacao A on  B.index_name = A.Nm_Indice  collate Latin1_General_BIN
