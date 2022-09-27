@@ -22,3 +22,34 @@ DEALLOCATE updatestats
 GO
 SET NOCOUNT OFF
 GO
+
+
+/*
+-- CASO DE ERROR NA DE CIMA
+
+SET NOCOUNT ON
+GO
+DECLARE updatestats CURSOR FOR
+SELECT name FROM sys.tables
+where type_desc = 'USER_TABLE'
+OPEN updatestats
+
+DECLARE @tablename NVARCHAR(128)
+DECLARE @Statement NVARCHAR(300)
+
+FETCH NEXT FROM updatestats INTO @tablename
+WHILE (@@FETCH_STATUS = 0)
+BEGIN
+   PRINT N'UPDATING STATISTICS ' + @tablename
+   SET @Statement = 'UPDATE STATISTICS '  + @tablename + '  WITH FULLSCAN'
+   EXEC sp_executesql @Statement
+   FETCH NEXT FROM updatestats INTO @tablename
+END
+
+CLOSE updatestats
+DEALLOCATE updatestats
+GO
+SET NOCOUNT OFF
+GO
+
+*/
