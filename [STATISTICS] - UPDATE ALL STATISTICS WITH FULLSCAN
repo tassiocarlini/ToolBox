@@ -53,3 +53,45 @@ SET NOCOUNT OFF
 GO
 
 */
+
+
+
+
+/*
+-- MAIS 5 DIAS SEM ATT
+SET NOCOUNT ON
+GO
+DECLARE updatestats CURSOR FOR
+
+
+SELECT     obj.name TableName
+FROM        sys.objects AS obj
+INNER JOIN  sys.stats AS stat ON stat.object_id = obj.object_id
+CROSS APPLY sys.dm_db_stats_properties(stat.object_id, stat.stats_id) AS sp
+WHERE       obj.is_ms_shipped = 0
+and last_updated < getdate() -5
+ORDER BY    modification_counter DESC
+
+OPEN updatestats
+
+DECLARE @tablename NVARCHAR(128)
+DECLARE @Statement NVARCHAR(300)
+
+FETCH NEXT FROM updatestats INTO @tablename
+WHILE (@@FETCH_STATUS = 0)
+BEGIN
+   PRINT N'UPDATING STATISTICS ' + @tablename
+   SET @Statement = 'UPDATE STATISTICS '  + @tablename + '  WITH FULLSCAN'
+   EXEC sp_executesql @Statement
+   FETCH NEXT FROM updatestats INTO @tablename
+END
+
+CLOSE updatestats
+DEALLOCATE updatestats
+GO
+SET NOCOUNT OFF
+GO
+
+
+*/
+
