@@ -1,7 +1,7 @@
 SET NOCOUNT ON
 GO
 DECLARE updatestats CURSOR FOR
-SELECT table_name FROM information_schema.tables
+SELECT table_name FROM INFORMATION_SCHEMA.TABLES
 where TABLE_TYPE = 'BASE TABLE'
 OPEN updatestats
 
