@@ -1,0 +1,42 @@
+SET NOCOUNT ON
+GO
+DECLARE defrag CURSOR FOR
+
+SELECT   top 5    'ALTER INDEX [' + [i].[name] + '] ON [' + [s].[name] + '].[' + [t].[name] + 
+             '] REBUILD PARTITION = ALL WITH (DATA_COMPRESSION = PAGE' +
+             CASE WHEN [i].[fill_factor] BETWEEN 1 AND 89 THEN ', FILLFACTOR = 90' ELSE '' END + 
+             CASE WHEN [i].is_primary_key = 1 THEN ', ONLINE = OFF ' ELSE ', ONLINE=ON 'END+
+             ' )' AS Ds_Comando
+FROM [sys].[partitions] AS [p]
+INNER JOIN sys.tables AS [t] 
+     ON [t].[object_id] = [p].[object_id]
+INNER JOIN sys.indexes AS [i] 
+     ON [i].[object_id] = [p].[object_id] AND i.index_id = p.index_id
+INNER JOIN sys.schemas AS [s]
+		 ON [t].[schema_id] = [s].[schema_id]
+WHERE [p].[index_id] > 0
+			AND [i].[name] IS NOT NULL
+			AND [p].[rows] > 10000
+			AND [p].[data_compression_desc] = 'NONE'
+ORDER BY [p].[rows]	ASC
+
+OPEN defrag
+
+DECLARE @tablename NVARCHAR(1000)
+DECLARE @Statement NVARCHAR(1000)
+
+
+FETCH NEXT FROM defrag INTO @tablename
+WHILE (@@FETCH_STATUS = 0)
+BEGIN
+   PRINT N'COMMAND ' + @tablename
+   SET @Statement =  @tablename 
+   EXEC sp_executesql @Statement
+   FETCH NEXT FROM defrag INTO @tablename
+END
+
+CLOSE defrag
+DEALLOCATE defrag
+GO
+SET NOCOUNT OFF
+GO
