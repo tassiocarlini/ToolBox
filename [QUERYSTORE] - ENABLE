@@ -1,0 +1,9 @@
+DBCC TRACEON (7752,-1)
+GO
+ALTER DATABASE [dbname] SET QUERY_STORE = ON
+GO
+ALTER DATABASE [dbname] SET QUERY_STORE (OPERATION_MODE = READ_WRITE, MAX_STORAGE_SIZE_MB = 10240)
+GO
+
+
+--https://www.sqlskills.com/blogs/erin/query-store-trace-flags/
