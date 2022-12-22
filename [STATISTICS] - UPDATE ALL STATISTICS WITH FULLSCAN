@@ -173,6 +173,7 @@ exec sp_MSforeachdb @command1 = 'use [?]
 			AND OBJECT_SCHEMA_NAME(obj.object_id) not like ''%TOTVSAUDIT%'' COLLATE Latin1_General_CI_AI
 			AND obj.name not like ''%HISTORICO''
 			AND obj.name not like ''%LOG''
+			order by [rows] asc
 
 '
 
@@ -199,6 +200,7 @@ exec sp_MSforeachdb @command1 = 'use [?]
 			AND OBJECT_SCHEMA_NAME(obj.object_id) not like ''%TOTVSAUDIT%'' COLLATE Latin1_General_CI_AI
 			AND obj.name not like ''%HISTORICO''
 			AND obj.name not like ''%LOG''
+			order by [rows] asc
 
 '
 
