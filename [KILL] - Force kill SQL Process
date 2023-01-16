@@ -1,0 +1,3 @@
+--CMD
+sc queryex MSSQL$PROTHEUS
+taskkill /pid 6184 /f
