@@ -1,3 +1,5 @@
+-- Database maior consumo de CPU
+
 WITH DB_CPU_Stats
 AS
 (
