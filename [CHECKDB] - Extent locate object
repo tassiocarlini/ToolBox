@@ -1,0 +1,12 @@
+-- Find object alocated in extent
+
+SELECT OBJECT_SCHEMA_NAME(p.object_id), OBJECT_NAME(p.object_id), * 
+FROM sys.dm_tran_locks AS t
+INNER JOIN sys.dm_db_database_page_allocations(DB_ID(),NULL,NULL,NULL,'LIMITED') AS p
+ON t.resource_associated_entity_id = CASE 
+  WHEN resource_type = N'OBJECT' THEN p.object_id
+  WHEN resource_type IN (N'KEY',N'PAGE',N'RID') THEN p.rowset_id 
+  -- not quite sure about EXTENT
+END
+WHERE OBJECTPROPERTY(p.object_id, 'IsMsShipped') = 0
+AND extent_page_id = 1553928 -- EXTENT retornado checkdb
