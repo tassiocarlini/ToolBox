@@ -1,3 +1,5 @@
+
+/*Contagem conexões geral by user */
 SELECT 
     DB_NAME(dbid) as DBName, 
     COUNT(dbid) as NumberOfConnections,
@@ -8,3 +10,17 @@ WHERE
     dbid > 0
 GROUP BY 
     dbid, loginame
+
+
+/* Connexões HOST*/
+select  count(client_net_address) AS QTDE_CONEXOES,client_net_address
+from sys.dm_exec_connections	
+group by client_net_address
+order by 1 DESC
+
+/*Hosts JOB Server */
+select * from GKNOWNJOBSERVER
+where IPADDRESS IN ('172.28.153.54','172.28.153.55','172.28.153.56','172.28.153.57')
+
+--select * from GPARAMS
+select * from GJOBSERVER
