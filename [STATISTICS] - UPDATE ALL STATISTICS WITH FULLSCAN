@@ -66,7 +66,7 @@ exec sp_MSforeachdb @command1 = 'use [?]
 		CROSS APPLY sys.dm_db_stats_properties(stat.object_id, stat.stats_id) AS sp 
 		WHERE obj.is_ms_shipped = 0
 			AND (sp.modification_counter* 100 / [rows] >= (select mdcounter from ##tbmdcounter) OR sp.rows_sampled* 100 / [rows] <= 70 OR DATEDIFF(DAY, sp.last_updated, GETDATE()) > 5)
-			AND obj.name not in (SELECT TableNamePriority COLLATE Latin1_General_CI_AI from DBACloudControle.[dbo].[UpdateStatistics_Priority]) 
+			AND obj.name not in (SELECT TableNamePriority COLLATE Latin1_General_CI_AI from _DBACloudControle.[dbo].[UpdateStatistics_Priority]) 
 			AND OBJECT_SCHEMA_NAME(obj.object_id) not like ''%TOTVSAUDIT%'' COLLATE Latin1_General_CI_AI
 			AND obj.name not like ''%HISTORICO''
 			AND obj.name not like ''%LOG''
@@ -93,7 +93,7 @@ exec sp_MSforeachdb @command1 = 'use [?]
 			--AND (sp.rows_sampled* 100 / [rows] <= 70 OR DATEDIFF(DAY, sp.last_updated, GETDATE()) > 2)
 			AND (sp.modification_counter* 100 / [rows] >= (select mdcounter from ##tbmdcounter) OR sp.rows_sampled* 100 / [rows] <= 70 OR DATEDIFF(DAY, sp.last_updated, GETDATE()) > 5)
 			AND obj.name not like ''%_TTAT_LOG%'' COLLATE Latin1_General_CI_AI
-			AND obj.name in (SELECT TableNamePriority COLLATE Latin1_General_CI_AI from DBACloudControle.[dbo].[UpdateStatistics_Priority])
+			AND obj.name in (SELECT TableNamePriority COLLATE Latin1_General_CI_AI from _DBACloudControle.[dbo].[UpdateStatistics_Priority])
 			AND OBJECT_SCHEMA_NAME(obj.object_id) not like ''%TOTVSAUDIT%'' COLLATE Latin1_General_CI_AI
 			AND obj.name not like ''%HISTORICO''
 			AND obj.name not like ''%LOG''
