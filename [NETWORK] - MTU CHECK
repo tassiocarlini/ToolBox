@@ -1,0 +1,2 @@
+--MTU
+netsh interface ipv4 show subinterfaces
