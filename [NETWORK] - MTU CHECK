@@ -1,2 +1,2 @@
---MTU
+--MTU 1500 (normal) APP e Banco mesmo MTU, caso esteja 9000 (Alterar para 1500, a quente)
 netsh interface ipv4 show subinterfaces
