@@ -1,0 +1,15 @@
+$%%SQL ERROR LOG LOOPBACK ERROR%%$
+
+##Validar local do ERROLOG:
+HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Microsoft SQL Server\MSSQL10_50.instance_name\MSSQLServer\Parameters
+
+##Ler o último ERRORLOG
+##Validar se usuário de Serviço do SQL Está mapeado na instância, caso não esteja, Mapear
+
+
+
+
+Agent do sql  não fica em Pé
+Propriedade
+connection
+LOCALHOST
