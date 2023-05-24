@@ -1,10 +1,18 @@
+-- Latency Check, queue CDC to commit
+select latency, *
+from sys.dm_cdc_log_scan_sessions
+
+-- Error log Check CDC
+SELECT * FROM sys.dm_cdc_errors
+order by 3 desc
+
+--Disable CDC 1 table
 EXEC sys.sp_cdc_disable_table
     @source_schema = 'dbo', -- sysname
     @source_name = 'SD2010', -- sysname
     @capture_instance = 'dbo_SD2010' -- sysname
 
-
-
+-- Chech Information for specific table
 EXEC sys.sp_cdc_help_change_data_capture
 GO 
 SELECT OBJECT_NAME([object_id]), OBJECT_NAME(source_object_id), capture_instance
