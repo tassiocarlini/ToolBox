@@ -1,0 +1,12 @@
+EXEC sys.sp_cdc_disable_table
+    @source_schema = 'dbo', -- sysname
+    @source_name = 'SD2010', -- sysname
+    @capture_instance = 'dbo_SD2010' -- sysname
+
+
+
+EXEC sys.sp_cdc_help_change_data_capture
+GO 
+SELECT OBJECT_NAME([object_id]), OBJECT_NAME(source_object_id), capture_instance
+FROM cdc.change_tables
+where  OBJECT_NAME([object_id]) like '%SD2010%'
