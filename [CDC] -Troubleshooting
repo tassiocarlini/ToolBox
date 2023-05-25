@@ -22,3 +22,16 @@ GO
 SELECT OBJECT_NAME([object_id]), OBJECT_NAME(source_object_id), capture_instance
 FROM cdc.change_tables
 where  OBJECT_NAME([object_id]) like '%SD2010%'
+
+
+
+
+-- If you got some DDL on table you have to add a new capture_instance for this table
+EXEC sys.sp_cdc_enable_table   
+@source_schema = N'dbo',
+@source_name   = N'CDCTest',
+@role_name     = NULL,
+@capture_instance = N'New_TESTCDC' ,
+@filegroup_name = N'Primary',
+@supports_net_changes = 0
+GO
