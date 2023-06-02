@@ -1,0 +1,59 @@
+/* Query para verificar o % de objetos compactados no database */
+ 
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+GO
+ 
+WITH COMPRESSED
+AS (
+    SELECT @@SERVERNAME AS SERVERNAME
+        ,DB_NAME() AS DBNAME
+        ,COUNT(*) AS COMPRIMIDAS
+    FROM sys.partitions A
+    JOIN sys.objects B ON A.[object_id] = B.[object_id]
+    WHERE B.is_ms_shipped = 0
+        AND A.data_compression_desc <> 'NONE'
+    )
+    ,UNCOMPRESSED
+AS (
+    SELECT @@SERVERNAME AS SERVERNAME
+        ,DB_NAME() AS DBNAME
+        ,COUNT(*) AS NAO_COMPRIMIDAS
+    FROM sys.partitions A
+    JOIN sys.objects B ON A.[object_id] = B.[object_id]
+    WHERE B.is_ms_shipped = 0
+        AND A.data_compression_desc = 'NONE'
+    )
+    ,TOTAL
+AS (
+    SELECT @@SERVERNAME AS SERVERNAME
+        ,DB_NAME() AS DBNAME
+        ,COUNT(*) AS TOTALTABELAS
+    FROM sys.partitions A
+    JOIN sys.objects B ON A.[object_id] = B.[object_id]
+    WHERE B.is_ms_shipped = 0
+    )
+    ,SIZE
+AS (
+    SELECT @@SERVERNAME AS SERVERNAME
+        ,db_name(database_id) AS DBNAME
+        ,SUM(cast((size * 8) / 1024 AS NUMERIC(10, 2))) AS SIZEDATA
+    FROM sys.master_files
+    WHERE type_desc = 'ROWS'
+    GROUP BY database_id
+    )
+SELECT COMPRESSED.SERVERNAME
+    ,COMPRESSED.DBNAME
+    ,SIZEDATA
+    ,NAO_COMPRIMIDAS
+    ,COMPRIMIDAS
+    ,TOTAL.TOTALTABELAS
+    ,COMPRESSED.COMPRIMIDAS
+    ,CAST((CAST(COMPRIMIDAS AS FLOAT) / CAST(TOTALTABELAS AS FLOAT)) AS NUMERIC(10, 2)) * 100 AS [% OBJETOS COMPACTADOS]
+FROM TOTAL
+LEFT OUTER JOIN COMPRESSED ON COMPRESSED.SERVERNAME = TOTAL.SERVERNAME
+    AND COMPRESSED.DBNAME = TOTAL.DBNAME
+INNER JOIN UNCOMPRESSED ON TOTAL.SERVERNAME = COMPRESSED.SERVERNAME
+    AND TOTAL.DBNAME = COMPRESSED.DBNAME
+INNER JOIN SIZE ON SIZE.SERVERNAME = TOTAL.SERVERNAME
+    AND SIZE.DBNAME = TOTAL.DBNAME
+WHERE COMPRIMIDAS > 0
