@@ -1,0 +1,18 @@
+USE [master]
+GO
+ALTER DATABASE [DB_NAME] ADD FILEGROUP [PROTHEUS_CDC]
+GO
+ALTER DATABASE [DB_NAME] ADD FILE ( NAME = N'PROTHEUS_CDC', FILENAME = N'G:\PROTHEUS\CDC\PROTHEUS_CDC_01.ndf' , SIZE = 10485760KB , FILEGROWTH = 1048576KB ) TO FILEGROUP [PROTHEUS_CDC]
+GO
+
+EXEC sys.sp_cdc_enable_db 
+GO
+
+-----------TABLES
+EXEC sys.sp_cdc_enable_table  
+@source_schema = N'dbo',  
+@source_name   = N'AY0010',  
+@role_name     = NULL,  
+@filegroup_name = N'PROTHEUS_CDC',  
+@supports_net_changes = 1  
+GO
