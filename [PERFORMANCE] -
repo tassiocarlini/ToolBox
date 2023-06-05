@@ -1,0 +1,34 @@
+--https://techcommunity.microsoft.com/t5/azure-database-support-blog/lesson-learned-364-getting-all-conversion-implicit-warnings/ba-p/3840029
+-- By Jose Manuel Jurado Diaz
+
+WITH XMLNAMESPACES
+(DEFAULT 'http://schemas.microsoft.com/sqlserver/2004/07/showplan')
+SELECT QueryID, 
+       query_plan,
+	   plan_id,
+	   qrs.count_executions, 
+	   qrs.avg_duration,
+	   qrs.min_duration,
+	   qrs.max_duration,
+	   qrs.first_execution_time,
+	   qrs.last_execution_time,
+       stmtTQL.value('(@StatementText)[1]', 'varchar(max)') AS SQL_Text,
+	   obj.value('(@ConvertIssue)[1]', 'varchar(max)') AS ConvertIssue, 
+       obj.value('(@Expression)[1]', 'varchar(max)') AS Expression 	   
+	   FROM
+(
+     SELECT query_plan,QueryID,PlanID
+     FROM
+     (
+          SELECT TRY_CONVERT(XML, [qsp].[query_plan]) AS [query_plan], [qsp].plan_id as PlanID, [qsp].query_id as QueryID
+          FROM sys.query_store_plan [qsp]) tp
+          ) AS tab(query_plan, queryID,PlanID)
+    JOIN sys.query_store_runtime_stats qrs on tab.planid = qrs.plan_id
+	JOIN sys.query_store_runtime_stats_interval itvl ON itvl.runtime_stats_interval_id = qrs.runtime_stats_interval_id
+    CROSS APPLY query_plan.nodes('/ShowPlanXML/BatchSequence/Batch/Statements/StmtSimple/QueryPlan/Warnings') AS batch(stmt)
+    CROSS APPLY query_plan.nodes('/ShowPlanXML/BatchSequence/Batch/Statements/StmtSimple') AS TSQL(stmtTQL)
+    CROSS APPLY stmt.nodes('.//PlanAffectingConvert') AS idx(obj)
+	where obj.value('(@ConvertIssue)[1]', 'varchar(max)')='Seek Plan'
+	and count_executions>1
+	and NOT (itvl.start_time > '2023-06-05 00:00:00' OR itvl.end_time < '2023-06-01 00:00:00') 
+    OPTION(MAXDOP 1, RECOMPILE);
