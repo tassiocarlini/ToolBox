@@ -16,3 +16,7 @@ EXEC sys.sp_cdc_enable_table
 @filegroup_name = N'PROTHEUS_CDC',  
 @supports_net_changes = 1  
 GO
+
+
+--retetion
+sp_cdc_change_job @job_type='cleanup', @retention=minutes
