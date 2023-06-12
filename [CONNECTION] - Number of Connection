@@ -18,6 +18,13 @@ from sys.dm_exec_connections
 group by client_net_address
 order by 1 DESC
 
+
+SELECT getdate(),cntr_value
+FROM sys.dm_os_performance_counters
+WHERE counter_name = 'User Connections';
+
+
+
 /*Hosts JOB Server */
 select * from GKNOWNJOBSERVER
 where IPADDRESS IN ('172.28.153.54','172.28.153.55','172.28.153.56','172.28.153.57')
