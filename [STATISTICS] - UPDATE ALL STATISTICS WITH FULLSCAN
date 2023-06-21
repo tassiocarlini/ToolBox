@@ -5,7 +5,8 @@ INNER JOIN  sys.stats AS stat ON stat.object_id = obj.object_id
 CROSS APPLY sys.dm_db_stats_properties(stat.object_id, stat.stats_id) AS sp
 WHERE       obj.is_ms_shipped = 0
 and last_updated < getdate() -5
-and obj.name not like '%%_TTAT_LOG%'
+and obj.name not like '%%_TTAT_LOG%' -- Protheus Audit
+AND OBJECT_SCHEMA_NAME(obj.object_id) not like '%TOTVSAUDIT%' COLLATE Latin1_General_CI_AI --RM Audit
 
 */
 
