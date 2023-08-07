@@ -1,0 +1,8 @@
+SELECT 
+    DB_NAME(database_id) AS DatabaseName,
+    last_hardened_lsn,
+    last_redone_lsn,
+    last_hardened_time,
+    last_redone_time
+FROM sys.dm_hadr_database_replica_states
+WHERE is_local = 0; 
