@@ -1,0 +1,196 @@
+#! powershell
+​
+# *****************************************************************************
+# Historia:
+# Data : 06/08/2023 
+# Alterado por Wesley Cardoso
+# Script com base no artigo "Automatically setting SQL Server perf counters using Powershell" 
+# Link : http://aerostitch.github.io/databases/sqlserver/generate_perfcounters_sql_server.html
+# O script abaixo irá gerar o arquivo bgl porém de forma automatizada para as instâncias que existirem no servidor. 
+# da forma que foi escrito no artigo ele era estático e com a necessidade de informar a instância manualmente nos contadores
+# adicionei também um diretório / arquivo / rotina para create e delete e também a abertura do arquivo após a conclusão da coleta.
+# também adicionei os contadores de forma que fosse possível o filtro a nível de sql
+# *****************************************************************************
+​
+​
+# Criando o diretório onde será salvo o arquivo .blg no C:\DBA-COLETA
+​
+$folderPath = "C:\DBA-COLETA"
+​
+if (Test-Path $folderPath -PathType Container) {
+    Write-Host "Folder '$folderPath' already exists."
+} else {
+    New-Item -Path $folderPath -ItemType Directory
+    Write-Host "Folder '$folderPath' created."
+}
+​
+$dic = $folderPath
+​
+​
+# Deletando arquivos antigo do diretório C:\DBA-COLETA
+​
+$partialFileName = "DBA_PerfMon_counters"
+$directoryPath = "$dic"
+​
+$filesToDelete = Get-ChildItem -Path $directoryPath | Where-Object { $_.Name -like "*$partialFileName*" }
+​
+if ($filesToDelete.Count -gt 0) {
+    foreach ($file in $filesToDelete) {
+        Remove-Item $file.FullName -Force
+        Write-Host "File '$($file.FullName)' deleted."
+    }
+} else {
+    Write-Host "No files with '$partialFileName' in the name were found."
+}
+​
+# Inicio do Script para iniciar uma nova coleta
+​
+$outfiles_directory = "$dic"  # Where to put result files
+# What to prefix result files names with
+$outfile_prefix  = (Get-Date -f 'yyyyMMdd_HHmmss').ToString() +"_"
+$outfiles_format = 'BLG'       # Output wanted format. Valid values are CSV, TSV, and BLG
+$sample_interval = 2           # Sample interval time (s)
+$max_samples     = 10          # Number of samples value to catch
+​
+​
+Function export_counters ()
+{
+    Param ([string]$file_name="unknown_counters", [string[]]$counters)
+​
+    $sb = {
+        Param ([int]$sample_interval, [int]$max_samples, [string]$outfiles_format, [string]$outfiles_directory,
+                [string]$outfile_prefix, [string]$file_name, [string[]]$counters)
+        Get-Counter -Counter $counters  `
+        -SampleInterval $sample_interval -MaxSamples $max_samples `
+        | Export-Counter -FileFormat $outfiles_format `
+            -Path "$outfiles_directory\$($outfile_prefix)$($file_name).$($outfiles_format.ToLower())"
+        }
+    Start-Job -Name "DBA-COLETA" -ScriptBlock $sb -ArgumentList @($sample_interval, $max_samples, $outfiles_format,
+        $outfiles_directory, $outfile_prefix, $file_name, $counters) | Out-Null
+}
+​
+# OS memory and Paging Performance counters
+$os_mem_counters = @(
+    '\Memory\Available MBytes'
+    )
+# OS CPU and Processor counters
+$os_proc_counters = @(
+    '\Process(sqlservr)\% Processor Time',
+    '\Processor(_Total)\% Privileged Time',
+    '\Processor(_Total)\% Processor Time'
+    )
+#OS DISKS
+$os_logicaldisk_counters = @(
+    '\LogicalDisk(*)\Current Disk Queue Length',
+    '\LogicalDisk(*)\Avg. Disk sec/Read',
+    '\LogicalDisk(*)\Avg. Disk sec/Write',
+    '\LogicalDisk(*)\Disk Reads/sec',
+    '\LogicalDisk(*)\Disk Writes/sec'
+    )
+#SQL Server
+​
+$sql = @(
+        $CounterSets = Get-Counter -ListSet *
+        $SQLCounterSets = $CounterSets | Where-Object { $_.CounterSetName -like "MSSQL$*" }
+        $FilteredPaths = $SQLCounterSets | 
+            Select-Object -ExpandProperty Paths |
+            Where-Object { $_ -like "*Buffer Manager\Lazy writes/sec" -or 
+                           $_ -like "*Buffer Manager\Page reads/sec*" -or 
+                           $_ -like "*Buffer Manager\Page writes/sec" -or 
+                           $_ -like "*Buffer Manager\Page life expectancy" -or
+                           $_ -like "*Latches\Total Latch Wait Time (ms)" -or
+                           $_ -like "*Locks(_Total)\Lock Wait Time (ms)" -or
+                           $_ -like "*Memory Manager\Free Memory (KB)" -or
+                           $_ -like "*Memory Manager\Memory Grants Pending" -or
+                           $_ -like "*SQL Statistics\Batch Requests/sec"  -or
+                           $_ -like "*SQL Statistics\SQL Compilations/sec"
+                           
+                           
+                           }
+        
+        $FilteredPaths
+    )
+​
+​
+export_counters "DBA_PerfMon_counters" $($os_mem_counters + $os_proc_counters + $os_logicaldisk_counters + $sql)
+​
+​
+#Write-Host "Para acompanhar sua coleção de monitores de desempenho, use o comando Get-Job:"
+#Get-Job -State Running
+#Write-Host "#################################################################################################"
+#Write-Host "To clean up the jobs when done, use the 'Remove-Job -State Completed' command."
+#Get-Job
+#Write-Host "#################################################################################################"
+#Write-Host "Limpando a fila de jobs referente ao job DBA-COLETA e completados com sucesso"
+​
+# Time de 10 segundo para limpar a fila de job completed.
+Start-Sleep -Seconds 10
+​
+Get-Job | Where-Object { $_.Name -eq 'DBA-COLETA' -and $_.State -eq 'Completed' } | Remove-Job
+Write-Host "#################################################################################################"
+Write-Host ''
+Write-Host "AGUARDE"
+​
+Write-Host ''
+Write-Host "O PERFMON SERÁ ABERTO EM 30 SEGUNDOS"
+​
+Start-Sleep -Seconds 30
+​
+# Replace 'contadores' with the appropriate filename if needed
+$filename = "$outfiles_directory\$($outfile_prefix)$partialFileName.$($outfiles_format.ToLower())"
+​
+if (Test-Path $filename) {
+    Invoke-Item $filename
+} else {
+    Write-Host "The file '$filename' does not exist."
+}
+​
+Write-Host ''
+Write-Host 'Arquivo gerado no diretório' $folderPath
+Write-Host ''
+Write-Host 'Faça alteração das propriedades do PERFMON para que seja iniciado a coleta em tempo real'
+Write-Host ''
+Write-Host 'FAÇA A ALTERAÇÃO EM "PROPERTIES > SOURCE > CURRENT ACTIVITY'
+​
+Write-Host "#################################################################################################"
+​
+Write-Host 'SERÁ GERADO O ARQUIVO BLG COM OS CONTADORES DE PERFORMANCE ABAIXO:'
+​
+Write-Host ''
+​
+Write-Host "Contadores de CPU"
+Write-Host "========================================================="
+Write-Host "'\Process(sqlservr)\% Processor Time'"
+Write-Host "'\Process(_Total)\% Processor Time'"
+Write-Host "'\Processor(_Total)\% Privileged Time'"
+Write-Host "'\Processor(_Total)\% Processor Time'"
+​
+Write-Host ''
+​
+Write-Host "Contadores de disco"
+Write-Host "========================================================="
+Write-Host "'\LogicalDisk(*)\Current Disk Queue Length'"
+Write-Host "'\LogicalDisk(*)\Avg. Disk sec/Read'"
+Write-Host "'\LogicalDisk(*)\Avg. Disk sec/Write'"
+Write-Host "'\LogicalDisk(*)\Disk Reads/sec'"
+Write-Host "'\LogicalDisk(*)\Disk Writes/sec'"
+​
+Write-Host ''
+​
+Write-Host "SQL Server"
+Write-Host "========================================================="
+Write-Host "'Buffer Manager\Lazy writes/sec'"
+Write-Host "'Buffer Manager\Page reads/se'"
+Write-Host "'Buffer Manager\Page writes/sec'"
+Write-Host "'Buffer Manager\Page life expectancy'"
+Write-Host "'Latches\Total Latch Wait Time (ms)'"
+Write-Host "'Locks(_Total)\Lock Wait Time (ms)'"
+Write-Host "'Memory Manager\Free Memory (KB)'"
+Write-Host "'Memory Manager\Memory Grants Pending'"
+Write-Host "'SQL Statistics\Batch Requests/sec'"
+Write-Host "'SQL Statistics\SQL Compilations/sec'"
+​
+Write-Host ''
+​
+# Aguardar entrada do usuário antes de encerrar
+Read-Host "Pressione Enter para encerrar o script..."
