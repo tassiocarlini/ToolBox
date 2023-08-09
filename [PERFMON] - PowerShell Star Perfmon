@@ -91,7 +91,7 @@ $os_logicaldisk_counters = @(
 ​
 $sql = @(
         $CounterSets = Get-Counter -ListSet *
-        $SQLCounterSets = $CounterSets | Where-Object { $_.CounterSetName -like "MSSQL$*" }
+        $SQLCounterSets = $CounterSets | Where-Object { $_.CounterSetName -like "MSSQL*" }
         $FilteredPaths = $SQLCounterSets | 
             Select-Object -ExpandProperty Paths |
             Where-Object { $_ -like "*Buffer Manager\Lazy writes/sec" -or 
