@@ -1,1 +1,2 @@
+-- Ip e porta, arquivo sera criado direto onde foi aberto terminal CMD
 tcping.exe -d -t 172.28.69.101 1433 > 101-1433.txt
