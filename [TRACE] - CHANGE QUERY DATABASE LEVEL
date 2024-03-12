@@ -1,0 +1,2 @@
+OPTION(recompile,querytraceon 9481,USE HINT('FORCE_LEGACY_CARDINALITY_ESTIMATION'))--2014+
+OPTION(recompile,querytraceon 2312)
