@@ -1,0 +1,59 @@
+
+-- sp_WhoIsActive
+
+
+-- Verifica as Queries Lentas de um periodo - Agrupadas
+select substring(TextData,1,150) AS QUERY, count(*) AS QTDE
+from DBACloudControle.dbo.Queries_Profile (nolock)
+where	StartTime >= '20210830' 
+		-- and StartTime < '20201029'
+		AND DATEPART(HOUR,StartTime) >= 8 AND DATEPART(HOUR,StartTime) <= 18
+		and datepart(weekday,StartTime) > 1 AND datepart(weekday,StartTime) < 7		
+		--AND substring(TextData,1,150) NOT LIKE '%%'						-- Query 	
+group by substring(TextData,1,150)
+order by 2 DESC
+
+
+-- Verifica as Queries Lentas de um periodo - String
+select *
+from DBACloudControle.dbo.Queries_Profile (nolock)
+where	StartTime >= '20210830' -- and StartTime < '20201029'
+	AND DATEPART(HOUR,StartTime) >= 8 AND DATEPART(HOUR,StartTime) <= 18
+			and datepart(weekday,StartTime) > 1 AND datepart(weekday,StartTime) < 7
+		and TextData LIKE '%%'	-- Query
+order by StartTime DESC
+
+
+
+
+
+
+-- Verifica as Queries Lentas de um periodo - String
+select *
+from DBACloudControle.dbo.Queries_Profile (nolock)
+where	StartTime >= '20210830' -- and StartTime < '20201029'
+		AND DATEPART(HOUR,StartTime) >= 8 AND DATEPART(HOUR,StartTime) <= 18
+		and datepart(weekday,StartTime) > 1 AND datepart(weekday,StartTime) < 7		
+order by Reads DESC
+
+
+
+-- Queries Lentas agrupadas por dia
+select convert(varchar(10),StartTime,120) AS StartTime, COUNT(*) Qt_Queries_Lentas
+from DBACloudControle.dbo.Queries_Profile (nolock)
+where	DATEPART(HOUR,StartTime) >= 8 AND DATEPART(HOUR,StartTime) <= 18
+		and datepart(weekday,StartTime) > 1 AND datepart(weekday,StartTime) < 7
+GROUP BY convert(varchar(10),StartTime,120)
+order by 1 DESC
+
+
+--Utilização dos meus índices criados na consultoria
+select getdate(), o.Name,i.name, s.user_seeks,s.user_scans,s.user_lookups, s.user_Updates, 
+ isnull(s.last_user_seek,isnull(s.last_user_scan,s.last_User_Lookup)) Ultimo_acesso,fill_factor
+from sys.dm_db_index_usage_stats s
+  join sys.indexes i on i.object_id = s.object_id and i.index_id = s.index_id
+  join sys.sysobjects o on i.object_id = o.id
+where s.database_id = db_id() 
+	and (i.name like 'SK0%' OR i.name like '%W0_')
+	and o.name <> 'TOP_VIEW'
+order by s.user_seeks + s.user_scans + s.user_lookups desc
