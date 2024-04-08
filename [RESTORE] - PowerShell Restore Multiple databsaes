@@ -1,0 +1,55 @@
+##Diretorio dos arquivos de backup
+$backupRoot = Get-ChildItem -Path "D:\BACKUP\RM\Tassio"
+
+##Onde vai ficar os arquivos de dados
+$datafilesDest = "D:\DADOS\RM\RM_TST"
+
+##Onde vai ficar os arquivos de Log
+$logfilesDest = "L:\LOG\RM\RM_TST"
+
+##Instância
+$server = "VDBASG295\RM_TST" 
+
+## For each folder in the backup root directory...
+foreach($folder in $backupRoot)
+{   
+    # Get the most recent .bak files for all databases...
+    $backupFiles = Get-ChildItem -Path $folder.FullName -Filter "*.bak" -Recurse | Sort-Object -Property CreationTime -Descending | Select-Object -First 1
+    
+    # For each .bak file...
+    foreach ($backupFile in $backupFiles)
+    {
+        # Restore the header to get the database name...
+        $query = "RESTORE HEADERONLY FROM DISK = N'$($backupFile.FullName)'"
+        $headerInfo = Invoke-Sqlcmd -ServerInstance $server -Query $query
+        $databaseName = $headerInfo.DatabaseName
+
+        # Restore the file list to get the logical filenames of the database files...
+        $query = "RESTORE FILELISTONLY FROM DISK = N'$($backupFile.FullName)'"
+        $files = Invoke-Sqlcmd -ServerInstance $server -Query $query
+
+        # Set some variables...
+        $relocate = @()
+
+        # Iterate over data files...
+        foreach ($dataFile in $files | Where-Object { $_.Type -eq "D" }) {
+            $dataFileName = [System.IO.Path]::GetFileNameWithoutExtension($dataFile.LogicalName)
+            $uniqueIdentifier = "_" + $databaseName
+            $dataFileFullPath = Join-Path -Path $datafilesDest -ChildPath ($dataFileName + $uniqueIdentifier + ".mdf")
+            $obj = New-Object Microsoft.SqlServer.Management.Smo.RelocateFile($dataFile.LogicalName, $dataFileFullPath)
+            $relocate += $obj
+        }
+
+        # Iterate over log files...
+        foreach ($logFile in $files | Where-Object { $_.Type -eq "L" }) {
+            $logFileName = [System.IO.Path]::GetFileNameWithoutExtension($logFile.LogicalName)
+            $uniqueIdentifier = "_" + $databaseName
+            $logFileFullPath = Join-Path -Path $logfilesDest -ChildPath ($logFileName + $uniqueIdentifier + ".ldf")
+            $obj = New-Object Microsoft.SqlServer.Management.Smo.RelocateFile($logFile.LogicalName, $logFileFullPath)
+            $relocate += $obj
+        }
+
+        # Perform the database restore...
+        Restore-SqlDatabase -ServerInstance $server -Database $databaseName -BackupFile $backupFile.FullName -RelocateFile $relocate
+    }
+}
