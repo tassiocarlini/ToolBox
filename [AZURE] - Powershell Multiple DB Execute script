@@ -1,0 +1,45 @@
+####Tássio Carlini####
+#Por segurança este script nao utiliza conexao json ou usuario cravado para conexao ao Azure, utilizar o Connect
+#Connect-AzAccount
+
+#Importar modulo SQL no powershell Install-Module SQLServer
+Import-Module SQLServer
+
+
+#Bases a serem ignoradas
+$IgnoreDB = @('master')
+
+$Subscription = Get-AzSubscription | Out-GridView -OutputMode 'Single'
+if($Subscription){
+    $Subscription | Select-AzSubscription
+
+    $AzSqlServer = Get-AzSqlServer | Out-GridView -OutputMode Multiple
+    if($AzSqlServer)
+    {
+        Foreach ($server in $AzSqlServer)
+        {
+            $SQLDatabase = Get-AzSqlDatabase -ServerName $server.ServerName -ResourceGroupName $server.ResourceGroupName | Where-Object { $_.DatabaseName -notin $IgnoreDB }
+            Foreach ($database in $SQLDatabase)
+            {
+               
+ 
+            # Query braba
+            $Params = @{
+               'ServerInstance' = $server.FullyQualifiedDomainName;
+               'Database' = $database.DatabaseName;
+			#usuario do AzureSqlServer	
+			   'Username' = 'USUARIO';
+               'Password' = 'SENHAA';
+            #Query a ser executada em cada base
+               'Query' = 'select name from sys.databases where name = DB_NAME()
+
+'
+            }
+ 
+            # Splat
+            Invoke-Sqlcmd @Params
+
+            }
+        }
+    }
+}
