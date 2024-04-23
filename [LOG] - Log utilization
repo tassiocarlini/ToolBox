@@ -1,3 +1,9 @@
+select name, log_reuse_wait, log_reuse_wait_desc  from sys.databases -- where name = 'TAF_CRNB0K
+go
+DBCC sqlperf(logspace)
+go
+
+
 SELECT 
    GETDATE() AS [Current Time],
    [des].[login_name] AS [Login Name],
