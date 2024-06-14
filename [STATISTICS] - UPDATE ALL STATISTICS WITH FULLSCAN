@@ -168,3 +168,97 @@ while @@FETCH_STATUS = 0
 	DEALLOCATE cr_UpdateStatsPriority
   END
 PRINT @mdcounter
+
+
+
+/*
+/*
+drop table #tbl_stats
+drop table #tbl_stats_priority
+
+*/
+create table #tbl_stats
+(
+	DBName sysname,
+	SchemaName sysname,
+	TableName sysname,
+	StatName sysname,
+	LastUpdated datetime,
+	ModificationCounter bigint,
+	[% Rows Sampled] int
+)
+
+create table #tbl_stats_priority
+(
+	DBNamePriority sysname,
+	SchemaNamePriority sysname,
+	TableNamePriority sysname,
+	StatNamePriority sysname,
+	LastUpdatedPriority datetime,
+	ModificationCounterPriority bigint,
+	[% Rows Sampled Priority] int
+)
+
+ declare @mdcounter int  = 30
+--SELECT valor variável para ser utilizada dentro do sp_MSforeachdb
+if object_id('tempdb.dbo.##tbmdcounter') is not null drop table ##tbmdcounter
+SELECT @mdcounter AS mdcounter INTO ##tbmdcounter
+
+--Consulta estatísticas
+insert into #tbl_stats (DBName, SchemaName, TableName, StatName, LastUpdated, ModificationCounter, [% Rows Sampled])
+exec sp_MSforeachdb @command1 = 'use [?]
+	IF DB_ID() > 4 and DATABASEPROPERTYEX(DB_NAME(), ''status'') = ''ONLINE'' and DATABASEPROPERTYEX(DB_NAME(), ''updateability'') = ''READ_WRITE''
+		SELECT   
+			DBName = DB_NAME(),   
+			SchemaName = OBJECT_SCHEMA_NAME(obj.object_id),
+			TableName = obj.name,
+			StatName = stat.name,
+			LastUpdated = sp.last_updated,
+            ModificationCounter = sp.modification_counter,
+			[% Rows Sampled] = sp.rows_sampled* 100 / [rows]
+		FROM  sys.objects AS obj
+		INNER JOIN  sys.stats AS stat ON stat.object_id = obj.object_id
+		CROSS APPLY sys.dm_db_stats_properties(stat.object_id, stat.stats_id) AS sp 
+		WHERE obj.is_ms_shipped = 0
+			AND (sp.modification_counter* 100 / [rows] >= (select mdcounter from ##tbmdcounter) OR sp.rows_sampled* 100 / [rows] <= 70 OR DATEDIFF(DAY, sp.last_updated, GETDATE()) > 1)
+			AND obj.name not in (SELECT TableNamePriority COLLATE Latin1_General_CI_AI from _DBACloudControle.[dbo].[UpdateStatistics_Priority]) 
+			AND OBJECT_SCHEMA_NAME(obj.object_id) not like ''%TOTVSAUDIT%'' COLLATE Latin1_General_CI_AI
+			AND obj.name not like ''%HISTORICO''
+			AND obj.name not like ''%LOG''
+			order by [rows] asc
+
+'
+
+----Consulta estatísticas Prioridade
+insert into #tbl_stats_priority (DBNamePriority, SchemaNamePriority, TableNamePriority, StatNamePriority, LastUpdatedPriority, ModificationCounterPriority, [% Rows Sampled Priority])
+exec sp_MSforeachdb @command1 = 'use [?]
+	IF DB_ID() > 4 and DATABASEPROPERTYEX(DB_NAME(), ''status'') = ''ONLINE'' and DATABASEPROPERTYEX(DB_NAME(), ''updateability'') = ''READ_WRITE''
+		SELECT   
+			DBName = DB_NAME(),   
+			SchemaName = OBJECT_SCHEMA_NAME(obj.object_id),
+			TableName = obj.name,
+			StatName = stat.name,
+			LastUpdated = sp.last_updated,
+            ModificationCounter = sp.modification_counter,
+			[% Rows Sampled] = sp.rows_sampled* 100 / [rows]
+		FROM  sys.objects AS obj
+		INNER JOIN  sys.stats AS stat ON stat.object_id = obj.object_id
+		CROSS APPLY sys.dm_db_stats_properties(stat.object_id, stat.stats_id) AS sp 
+		WHERE obj.is_ms_shipped = 0
+			--AND (sp.rows_sampled* 100 / [rows] <= 70 OR DATEDIFF(DAY, sp.last_updated, GETDATE()) > 2)
+			AND (sp.modification_counter* 100 / [rows] >= (select mdcounter from ##tbmdcounter) OR sp.rows_sampled* 100 / [rows] <= 70 OR DATEDIFF(DAY, sp.last_updated, GETDATE()) > 1)
+			AND obj.name not like ''%_TTAT_LOG%'' COLLATE Latin1_General_CI_AI
+			AND obj.name in (SELECT TableNamePriority COLLATE Latin1_General_CI_AI from _DBACloudControle.[dbo].[UpdateStatistics_Priority])
+			AND OBJECT_SCHEMA_NAME(obj.object_id) not like ''%TOTVSAUDIT%'' COLLATE Latin1_General_CI_AI
+			AND obj.name not like ''%HISTORICO''
+			AND obj.name not like ''%LOG''
+			order by [rows] asc
+
+'
+
+
+
+SELECT 'UPDATE STATISTICS '+TableName+'('+StatName+')'+ ' WITH FULLSCAN,MAXDOP=8' from #tbl_stats
+
+
+*/
