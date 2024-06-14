@@ -260,5 +260,7 @@ exec sp_MSforeachdb @command1 = 'use [?]
 
 SELECT 'UPDATE STATISTICS '+TableName+'('+StatName+')'+ ' WITH FULLSCAN,MAXDOP=8' from #tbl_stats
 
+SELECT distinct (TableName),'UPDATE STATISTICS '+TableName+' WITH FULLSCAN,MAXDOP=8' from #tbl_stats
+
 
 */
