@@ -1,5 +1,8 @@
 --https://support.microsoft.com/en-us/topic/kb3026083-fix-sos-cachestore-spinlock-contention-on-ad-hoc-sql-server-plan-cache-causes-high-cpu-usage-in-sql-server-798ca4a5-3813-a3d2-f9c4-89eb1128fe68
 --max 160k entries
+/*
+DBCC FREESYSTEMCACHE ('SQL Plans')
+*/
 
 select name, type, buckets_count 
 from sys.dm_os_memory_cache_hash_tables
