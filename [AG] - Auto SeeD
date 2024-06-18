@@ -4,3 +4,19 @@ select local_database_name
 ,transfer_rate_bytes_per_second/1024/1024 as transfer_rate_MB_per_second ,transferred_size_bytes/1024/1024 as transferred_size_MB
 ,database_size_bytes/1024/1024/1024/1024 as Database_Size_TB,
 is_compression_enabled     from sys.dm_hadr_physical_seeding_stats
+
+
+--
+
+SELECT 
+    local_database_name,
+    remote_machine_name,
+    role_desc,
+    internal_state_desc,
+    transfer_rate_bytes_per_second / 1024 / 1024 AS transfer_rate_MB_per_second,
+    transferred_size_bytes / 1024 / 1024 / 1024 AS transferred_size_GB,
+    database_size_bytes / 1024 / 1024 / 1024 / 1024 AS Database_Size_TB,
+    is_compression_enabled,
+    CONVERT(DECIMAL(5, 2), (transferred_size_bytes * 100.0 / NULLIF(database_size_bytes, 0))) AS Percent_Complete
+FROM 
+    sys.dm_hadr_physical_seeding_stats;
