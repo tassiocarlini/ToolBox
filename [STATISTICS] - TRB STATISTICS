@@ -1,0 +1,48 @@
+/****** Object:  StoredProcedure [dbo].[TOTVS_TRB_UPDATE_STATS]    Script Date: 20/06/2024 11:46:26 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE PROCEDURE [dbo].[TOTVS_TRB_UPDATE_STATS]
+AS
+BEGIN 
+
+DECLARE @tableName NVARCHAR(256)
+DECLARE @sqlCommand NVARCHAR(1024)
+
+-- Cursor to loop through all table names containing 'TRB'
+DECLARE tableCursor CURSOR FOR
+SELECT TABLE_SCHEMA + '.' + TABLE_NAME
+FROM INFORMATION_SCHEMA.TABLES
+WHERE TABLE_TYPE = 'BASE TABLE'
+AND TABLE_NAME LIKE '%TRB%'
+
+-- Open the cursor
+OPEN tableCursor
+
+-- Fetch the first table
+FETCH NEXT FROM tableCursor INTO @tableName
+
+-- Loop through all the tables
+WHILE @@FETCH_STATUS = 0
+BEGIN
+    -- Build the UPDATE STATISTICS command with FULLSCAN
+    SET @sqlCommand = 'UPDATE STATISTICS ' + @tableName + ' WITH FULLSCAN'
+
+    -- Execute the command
+    EXEC sp_executesql @sqlCommand
+
+    -- Fetch the next table
+    FETCH NEXT FROM tableCursor INTO @tableName
+END
+
+-- Close and deallocate the cursor
+CLOSE tableCursor
+DEALLOCATE tableCursor
+
+END
+GO
+
+
