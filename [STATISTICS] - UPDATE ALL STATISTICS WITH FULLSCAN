@@ -66,7 +66,7 @@ exec sp_MSforeachdb @command1 = 'use [?]
 		INNER JOIN  sys.stats AS stat ON stat.object_id = obj.object_id
 		CROSS APPLY sys.dm_db_stats_properties(stat.object_id, stat.stats_id) AS sp 
 		WHERE obj.is_ms_shipped = 0
-			AND (sp.modification_counter* 100 / [rows] >= (select mdcounter from ##tbmdcounter) OR sp.rows_sampled* 100 / [rows] <= 70 OR DATEDIFF(DAY, sp.last_updated, GETDATE()) > 5)
+			AND (sp.modification_counter* 100 / [rows] >= (select mdcounter from ##tbmdcounter) OR sp.rows_sampled* 100 / [rows] <= 70 OR DATEDIFF(DAY, sp.last_updated, GETDATE()) > 1)
 			AND obj.name not in (SELECT TableNamePriority COLLATE Latin1_General_CI_AI from _DBACloudControle.[dbo].[UpdateStatistics_Priority]) 
 			AND OBJECT_SCHEMA_NAME(obj.object_id) not like ''%TOTVSAUDIT%'' COLLATE Latin1_General_CI_AI
 			AND obj.name not like ''%HISTORICO''
@@ -92,7 +92,7 @@ exec sp_MSforeachdb @command1 = 'use [?]
 		CROSS APPLY sys.dm_db_stats_properties(stat.object_id, stat.stats_id) AS sp 
 		WHERE obj.is_ms_shipped = 0
 			--AND (sp.rows_sampled* 100 / [rows] <= 70 OR DATEDIFF(DAY, sp.last_updated, GETDATE()) > 2)
-			AND (sp.modification_counter* 100 / [rows] >= (select mdcounter from ##tbmdcounter) OR sp.rows_sampled* 100 / [rows] <= 70 OR DATEDIFF(DAY, sp.last_updated, GETDATE()) > 5)
+			AND (sp.modification_counter* 100 / [rows] >= (select mdcounter from ##tbmdcounter) OR sp.rows_sampled* 100 / [rows] <= 70 OR DATEDIFF(DAY, sp.last_updated, GETDATE()) > 1)
 			AND obj.name not like ''%_TTAT_LOG%'' COLLATE Latin1_General_CI_AI
 			AND obj.name in (SELECT TableNamePriority COLLATE Latin1_General_CI_AI from _DBACloudControle.[dbo].[UpdateStatistics_Priority])
 			AND OBJECT_SCHEMA_NAME(obj.object_id) not like ''%TOTVSAUDIT%'' COLLATE Latin1_General_CI_AI
@@ -121,7 +121,7 @@ while @@FETCH_STATUS = 0
 
  begin --priority
 
-	set @str_UpdateStatsPriority = 'UPDATE STATISTICS ' + QUOTENAME(@DBNamePriority) + '.' + QUOTENAME(@SchemaNamePriority) + '.' + QUOTENAME(@TableNamePriority) + '(' + '['+@StatNamePriority+']' + ') WITH FULLSCAN'
+	set @str_UpdateStatsPriority = 'UPDATE STATISTICS ' + QUOTENAME(@DBNamePriority) + '.' + QUOTENAME(@SchemaNamePriority) + '.' + QUOTENAME(@TableNamePriority) + '(' + '['+@StatNamePriority+']' + ') WITH FULLSCAN,MAXDOP=8'
 	exec (@str_UpdateStatsPriority)
 
 	fetch next from cr_UpdateStatsPriority into @DBNamePriority, @SchemaNamePriority, @TableNamePriority, @StatNamePriority
@@ -149,7 +149,7 @@ while @@FETCH_STATUS = 0
 
  begin --normal
 
-	set @str_UpdateStats = 'UPDATE STATISTICS ' + QUOTENAME(@DBName) + '.' + QUOTENAME(@SchemaName) + '.' + QUOTENAME(@TableName) + '(' + '['+@StatName+']' + ') WITH FULLSCAN'
+	set @str_UpdateStats = 'UPDATE STATISTICS ' + QUOTENAME(@DBName) + '.' + QUOTENAME(@SchemaName) + '.' + QUOTENAME(@TableName) + '(' + '['+@StatName+']' + ') WITH FULLSCAN,MAXDOP=8'
 	exec (@str_UpdateStats)
 
 	fetch next from cr_UpdateStats into @DBName, @SchemaName, @TableName, @StatName
