@@ -20,3 +20,37 @@ GO
 
 --retetion
 sp_cdc_change_job @job_type='cleanup', @retention=minutes
+
+
+
+
+-- add columns on existing tables CDC
+select *
+into bkp_dbo_Z11010_CT
+from cdc.dbo_Z11010_CT
+
+
+
+exec sys.sp_cdc_help_change_data_capture 'dbo','Z11010'
+
+-----------TABLES
+EXEC sys.sp_cdc_enable_table  
+@source_schema = N'dbo',  
+@source_name   = N'Z11010',  
+@role_name     = NULL,  
+@filegroup_name = N'PROTHEUS_CDC',  
+@supports_net_changes = 1  
+
+EXEC sp_cdc_disable_table
+    @source_schema = N'dbo',
+    @source_name = N'Z11010',
+    @capture_instance = 'dbo_Z11010'
+
+select *
+from cdc.dbo_Z11010_CT
+
+INSERT INTO cdc.dbo_Z11010_CT
+(__$start_lsn, __$end_lsn,__$seqval,__$operation,__$update_mask,[Z11_FILIAL], [Z11_CTRLRE], [Z11_VLREPA], [Z11_VLCOMI], [Z11_PARCEL], [Z11_BANDEI], [Z11_DSCBAN], [Z11_DTPGTO], [Z11_PAGO], [Z11_ARQPGT], [Z11_RECSE2], [Z11_TIPOPG], [Z11_VALEST], [D_E_L_E_T_], [R_E_C_N_O_], [R_E_C_D_E_L_], [Z11_VLORIG], [Z11_KEYSE2], [Z11_IDCNAB], [Z11_STATUS], [Z11_PAGDIA], [Z11_VLRPAG], [Z11_LINHA], [Z11_BANCPG], [Z11_INTEGR], [Z11_TITGER],__$command_id)
+SELECT
+__$start_lsn, __$end_lsn,__$seqval,__$operation,__$update_mask,[Z11_FILIAL], [Z11_CTRLRE], [Z11_VLREPA], [Z11_VLCOMI], [Z11_PARCEL], [Z11_BANDEI], [Z11_DSCBAN], [Z11_DTPGTO], [Z11_PAGO], [Z11_ARQPGT], [Z11_RECSE2], [Z11_TIPOPG], [Z11_VALEST], [D_E_L_E_T_], [R_E_C_N_O_], [R_E_C_D_E_L_], [Z11_VLORIG], [Z11_KEYSE2], [Z11_IDCNAB], [Z11_STATUS], [Z11_PAGDIA], [Z11_VLRPAG], [Z11_LINHA], [Z11_BANCPG], [Z11_INTEGR], NULL Z11_TITGER,__$command_id
+FROM bkp_dbo_Z11010_CT
