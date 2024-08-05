@@ -11,7 +11,7 @@ GO
 -----------TABLES
 EXEC sys.sp_cdc_enable_table  
 @source_schema = N'dbo',  
-@source_name   = N'AY0010',  
+@source_name   = N'AY0010',  -- TABLE NAME HERE
 @role_name     = NULL,  
 @filegroup_name = N'PROTHEUS_CDC',  
 @supports_net_changes = 1  
