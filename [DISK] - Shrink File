@@ -1,0 +1,2 @@
+-- Skrink in percent
+Invoke-DbaDbShrink -SqlInstance "VDBAPRIMEAG350A\PROTHEUS" -Database "DATABASE_NAME_PRD" -PercentFreeSpace 20 -FileType Data -StepSize 10GB
