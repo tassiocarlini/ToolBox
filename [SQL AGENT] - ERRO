@@ -6,3 +6,22 @@ GO
 
 ALTER SERVER ROLE [sysadmin] ADD MEMBER [NT SERVICE\SQLAgent$USER]
 GO
+
+
+
+sp_configure 'show advanced options', 1;
+RECONFIGURE;
+go
+sp_configure 'Agent XPs', 1;
+RECONFIGURE;
+
+
+USE [master]
+GO
+
+/****** Object:  Login [NT SERVICE\SQLAgent$PROTHEUS]    Script Date: 15/03/2024 14:15:23 ******/
+CREATE LOGIN [NT SERVICE\SQLAgent$PROTHEUS] FROM WINDOWS WITH DEFAULT_DATABASE=[master], DEFAULT_LANGUAGE=[us_english]
+GO
+
+ALTER SERVER ROLE [sysadmin] ADD MEMBER [NT SERVICE\SQLAgent$PROTHEUS]
+GO
