@@ -1,0 +1,127 @@
+USE [msdb]
+GO
+
+/** Object:  Job [CMCORP - Madrugada - Mata Conexão Sleeping]    Script Date: 9/14/2018 7:07:16 PM **/
+BEGIN TRANSACTION
+DECLARE @ReturnCode INT
+SELECT @ReturnCode = 0
+/** Object:  JobCategory [[Uncategorized (Local)]]    Script Date: 9/14/2018 7:07:16 PM **/
+IF NOT EXISTS (SELECT name FROM msdb.dbo.syscategories WHERE name=N'[Uncategorized (Local)]' AND category_class=1)
+BEGIN
+EXEC @ReturnCode = msdb.dbo.sp_add_category @class=N'JOB', @type=N'LOCAL', @name=N'[Uncategorized (Local)]'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+
+END
+
+DECLARE @jobId BINARY(16)
+EXEC @ReturnCode =  msdb.dbo.sp_add_job @job_name=N'CMCORP - Madrugada - Mata Conexão Sleeping', 
+		@enabled=1, 
+		@notify_level_eventlog=0, 
+		@notify_level_email=0, 
+		@notify_level_netsend=0, 
+		@notify_level_page=0, 
+		@delete_level=0, 
+		@description=N'No description available.', 
+		@category_name=N'[Uncategorized (Local)]', 
+		@owner_login_name=N'sa', @job_id = @jobId OUTPUT
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+/** Object:  Step [Mata Conexão Sleeping]    Script Date: 9/14/2018 7:07:16 PM **/
+EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'Mata Conexão Sleeping', 
+		@step_id=1, 
+		@cmdexec_success_code=0, 
+		@on_success_action=1, 
+		@on_success_step_id=0, 
+		@on_fail_action=2, 
+		@on_fail_step_id=0, 
+		@retry_attempts=0, 
+		@retry_interval=0, 
+		@os_run_priority=0, @subsystem=N'TSQL', 
+		@command=N'USE [Traces]
+
+-- Cria a Tabela Temporaria
+IF (OBJECT_ID(''tempdb..#TEMP_Resultado_WhoisActive'') IS NOT NULL)
+	DROP TABLE #TEMP_Resultado_WhoisActive
+
+CREATE TABLE #TEMP_Resultado_WhoisActive (
+	[Dt_Log] [datetime] NULL,
+	[start_time] [datetime] NULL,
+	[dd hh:mm:ss.mss] [varchar](8000) NULL,
+	[database_name] [nvarchar](128) NULL,
+	[session_id] [smallint] NOT NULL,
+	[blocking_session_id] [smallint] NULL,
+	[sql_text] [xml] NULL,
+	[login_name] [nvarchar](128) NOT NULL,
+	[wait_info] [nvarchar](4000) NULL,
+	[status] [varchar](30) NOT NULL,
+	[percent_complete] [varchar](30) NULL,
+	[host_name] [nvarchar](128) NULL,
+	[sql_command] [xml] NULL,
+	[CPU] [varchar](100) NULL,
+	[reads] [varchar](100) NULL,
+	[writes] [varchar](100) NULL,
+	[program_name] [nvarchar](500) NULL,
+	[open_tran_count] [int] NULL	
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+
+-- Retorna os dados da sp_whoisactive
+EXEC sp_WhoIsActive @get_outer_command = 1,
+	@output_column_list = ''[start_time][collection_time][d%][session_id][blocking_session_id][sql_text][login_name][wait_info][status][percent_complete]
+      [host_name][database_name][sql_command][CPU][reads][writes][program_name][open_tran_count]'',
+    @destination_table = ''#TEMP_Resultado_WhoisActive''
+
+ALTER TABLE #TEMP_Resultado_WhoisActive
+ALTER COLUMN [sql_command] VARCHAR(MAX)
+	
+UPDATE #TEMP_Resultado_WhoisActive
+SET [sql_command] = REPLACE( REPLACE( REPLACE( REPLACE( CAST([sql_command] AS VARCHAR(1000)), ''<?query --'', ''''), ''--?>'', ''''), ''&gt;'', ''>''), ''&lt;'', '''')
+
+-- Verifica se existe algum query que precisa de KILL
+IF (OBJECT_ID(''tempdb..#TEMP_KILL_Query'') IS NOT NULL)
+	DROP TABLE #TEMP_KILL_Query
+
+select *
+into #TEMP_KILL_Query
+from #TEMP_Resultado_WhoisActive
+where DATEDIFF(second, Dt_Log, start_time) > 10
+	and session_id > 50		-- Apenas processos de usuario
+	and status = ''sleeping''	-- Apenas processos com o status "sleeping"
+
+-- select * from #TEMP_KILL_Query
+
+-- Mata as Conexoes
+DECLARE @SPID as VARCHAR(5)
+
+WHILE ( (SELECT COUNT(*) FROM #TEMP_KILL_Query) > 0 )
+BEGIN
+	SET @SPID = (SELECT TOP 1 session_id FROM #TEMP_KILL_Query)
+	EXEC (''KILL '' +  @SPID)
+	DELETE FROM #TEMP_KILL_Query WHERE session_id = @SPID
+END', 
+		@database_name=N'Traces', 
+		@flags=0
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_update_job @job_id = @jobId, @start_step_id = 1
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_add_jobschedule @job_id=@jobId, @name=N'DIÁRIO - MADRUGADA - 04 AS 06 HORAS', 
+		@enabled=1, 
+		@freq_type=4, 
+		@freq_interval=1, 
+		@freq_subday_type=2, 
+		@freq_subday_interval=10, 
+		@freq_relative_interval=0, 
+		@freq_recurrence_factor=0, 
+		@active_start_date=20180914, 
+		@active_end_date=99991231, 
+		@active_start_time=40000, 
+		@active_end_time=60000, 
+		@schedule_uid=N'0cc54014-7fbd-4ff8-a158-f8d6694a4127'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_add_jobserver @job_id = @jobId, @server_name = N'(local)'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+COMMIT TRANSACTION
+GOTO EndSave
+QuitWithRollback:
+    IF (@@TRANCOUNT > 0) ROLLBACK TRANSACTION
+EndSave:
+
+GO
