@@ -66,3 +66,19 @@ SELECT [instance_name] [node],[cntr_value] [DatabasePages] FROM
 sys.dm_os_performance_counters
 WHERE [counter_name] = 'Database pages'
 ) dp ON ple.[node] = dp.[node]
+
+
+
+
+
+SELECT 
+    physical_memory_in_use_kb / 1024 AS physical_memory_in_use_mb,
+    large_page_allocations_kb / 1024 AS large_page_allocations_mb,
+    locked_page_allocations_kb / 1024 AS locked_page_allocations_mb,
+    total_virtual_address_space_kb / 1024 AS total_virtual_address_space_mb,
+    virtual_address_space_reserved_kb / 1024 AS virtual_address_space_reserved_mb,
+    virtual_address_space_committed_kb / 1024 AS virtual_address_space_committed_mb,
+    virtual_address_space_available_kb / 1024 AS virtual_address_space_available_mb,
+    process_physical_memory_low,
+    process_virtual_memory_low
+FROM sys.dm_os_process_memory;
