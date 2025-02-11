@@ -1,1 +1,2 @@
+--https://centraldeatendimento.totvs.com/hc/pt-br/articles/16261715311511-CLOUD-MP-Como-realizar-TCPING
 tcping.exe -d -t 172.28.69.101 1433 > 101-1433.txt
