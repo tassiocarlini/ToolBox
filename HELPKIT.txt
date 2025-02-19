@@ -1,3 +1,15 @@
+--SP_WHOISACTIVE
+exec master.dbo.sp_WhoIsActive --@get_plans = 1 ,@get_additional_info = 1 ,@output_column_list = '[%][additional_info]' 
+--,@delta_interval = 2 
+--,@sort_order = '[COLUNA]'
+--,@filter_type = 'database', @filter = 'COUD2N_125420_RM_PD'
+GO
+--sp_BlitzWho
+--GO
+stpLock_Raiz
+
+
+
 
 -- sp_WhoIsActive
 
