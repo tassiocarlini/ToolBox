@@ -21,3 +21,72 @@ FROM
    LEFT OUTER JOIN sys.dm_exec_requests [der] ON [der].[session_id] = [dtst].[session_id]
    CROSS APPLY sys.dm_exec_sql_text ([dec].[most_recent_sql_handle]) AS [dest]
 GO
+
+
+
+
+
+SET NOCOUNT ON;
+ 
+IF OBJECT_ID(N'tempdb..#OpenTranStatus', N'U') IS NOT NULL
+    DROP TABLE #OpenTranStatus;
+GO
+IF OBJECT_ID(N'tempdb..#OpenTranStatusStg', N'U') IS NOT NULL
+    DROP TABLE #OpenTranStatusStg;
+GO
+ 
+-- Create the temporary table to accept the results.
+CREATE TABLE #OpenTranStatus
+    (
+      -- dbname NVARCHAR(40),
+      dbname VARCHAR(100) ,
+      ActiveTransaction VARCHAR(25) ,
+      Details SQL_VARIANT
+    );
+ 
+CREATE TABLE #OpenTranStatusStg
+    (
+      -- dbname NVARCHAR(40),
+      ActiveTransaction VARCHAR(25) ,
+      Details SQL_VARIANT
+    );
+ 
+DECLARE @dbid INT ,
+    @dbname NVARCHAR(50) ,
+    @SQLStmt NVARCHAR(1000);
+ 
+DECLARE db_cursor CURSOR
+FOR
+    SELECT  database_id dbid ,
+            name dbname
+    FROM    sys.databases
+    WHERE   state_desc = 'ONLINE'
+    ORDER BY name;
+ 
+OPEN db_cursor;
+ 
+FETCH NEXT FROM db_cursor
+INTO @dbid, @dbname;
+ 
+WHILE @@FETCH_STATUS = 0
+    BEGIN
+        TRUNCATE TABLE #OpenTranStatusStg;
+        SET @SQLStmt = 'DBCC OPENTRAN (' + CAST(@dbid AS NVARCHAR(100))
+            + ') WITH TABLERESULTS, NO_INFOMSGS';
+        INSERT  INTO #OpenTranStatusStg
+                EXEC ( @SQLStmt
+                    );
+        INSERT  INTO #OpenTranStatus
+                SELECT  @dbname ,
+                        *
+                FROM    #OpenTranStatusStg;
+ 
+        -- Get the next vendor.
+        FETCH NEXT FROM db_cursor
+    INTO @dbid, @dbname;
+    END;
+CLOSE db_cursor;
+DEALLOCATE db_cursor;
+ 
+SELECT  *
+FROM    #OpenTranStatus;
