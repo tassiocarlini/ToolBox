@@ -69,3 +69,26 @@ where s.database_id = db_id()
 	and (i.name like 'SK0%' OR i.name like '%W0_')
 	and o.name <> 'TOP_VIEW'
 order by s.user_seeks + s.user_scans + s.user_lookups desc
+
+
+DECLARE @Prefixos TABLE (Prefixo NVARCHAR(10));
+
+INSERT INTO @Prefixos (Prefixo)
+VALUES 
+    ('SX5'), ('SB1'), ('SA1'), ('SA2'), ('SA6'), ('SED'), ('SE4'), ('SF4'),
+    ('FRV'), ('F'), ('FKC'), ('CT1'), ('CTT'), ('CTL'), ('CVD'), ('AI0'),
+    ('SF1'), ('SF2'), ('SD1'), ('SD2'), ('SE1'), ('SE2'), ('SE8'), ('SEA'),
+    ('FWI'), ('FK7'), ('SEF'), ('FKD'), ('FK1'), ('FK2'), ('FK3'), ('FK4'),
+    ('FK5'), ('FK6'), ('FK8'), ('FK9'), ('FKA'), ('CV3'), ('CKO'), ('SU5'),
+    ('AGA'), ('AGB'), ('AC8'), ('AR0'), ('AR1'), ('CTS'), ('CQ0'), ('CQ1'),
+    ('SEH'), ('SB2'), ('SB9'), ('CVE'), ('CVF'), ('FI7'), ('FI8'), ('SEI'),
+    ('F17'), ('F18'), ('SYS'), ('SE6'), ('CT2');
+
+SELECT TOP (1000) A.*
+FROM [_DBACloudControle].[dbo].[Log_Whoisactive] A
+INNER JOIN @Prefixos P
+    ON CONVERT(NVARCHAR(MAX), A.sql_text) LIKE '%' + P.Prefixo + '%'
+WHERE 1=1
+  AND A.Dt_Log >= '2025-04-25 14:30'
+  AND A.Dt_Log <= '2025-04-26 13:30'
+  AND A.session_id IN (173,177,186,1451,206,185,168,171,1317,163,1092,602,1422,748,647,963,1489,1546,1497,1230);
