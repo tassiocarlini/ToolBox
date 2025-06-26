@@ -1,0 +1,19 @@
+-- CRESCIMENTO VEGETATIVO DA BASE (GRÁFICO GRAFANA) EXPANSÃO DE DISCO
+use msdb
+go
+select --top 100
+    database_name DBName,
+    MONTH(backup_start_date) as [Month],
+    YEAR(backup_start_date) as [Year],
+    cast(AVG(backup_size/1024/1024) as decimal(18,2)) as Size_MB
+from backupset
+where
+    type = 'D'
+group by
+    database_name,
+    MONTH(backup_start_date),
+    YEAR(backup_start_date)
+order by
+    database_name,
+    [Year],
+    [Month]
