@@ -35,3 +35,11 @@ EXEC sys.sp_cdc_enable_table
 @filegroup_name = N'Primary',
 @supports_net_changes = 0
 GO
+
+
+
+ -- Nome database, nome da tabela CDC
+DBCC UPDATEUSAGE (CUI82W_149560_PR_PD,'cdc.dbo_ZZZ010_CT') WITH COUNT_ROWS
+
+-- Validar quantidade de linhas
+SELECT rows, * FROM sys.partitions WHERE object_id = object_id('cdc.dbo_ZZZ010_CT')  
