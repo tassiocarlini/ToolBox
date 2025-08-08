@@ -1,0 +1,60 @@
+WITH StatsData AS (
+    SELECT 
+        DB_NAME() AS DBName,
+        QUOTENAME(SCHEMA_NAME(t.schema_id)) + '.' + QUOTENAME(t.name) AS ObjName,
+        s.name AS Stat_Name,
+        s.stats_id AS Stat_ID,
+        STATS_DATE(s.object_id, s.stats_id) AS Last_Updated,
+        ISNULL(sp.modification_counter, 0) AS Modification_Counter,
+        pinfo.Total_Rows,
+        CAST((sp.rows_sampled * 100.0 / sp.rows) AS DECIMAL(5,2)) AS SamplePercent,
+        
+        -- Corrected UPDATE STATISTICS command for specific statistic
+        'USE ' + QUOTENAME(DB_NAME()) + '; UPDATE STATISTICS ' + 
+            QUOTENAME(SCHEMA_NAME(t.schema_id)) + '.' + QUOTENAME(t.name) + 
+            ' ' + QUOTENAME(s.name) + ' WITH FULLSCAN' AS Update_Command,
+        
+        -- Modification percentage
+        CASE 
+            WHEN pinfo.Total_Rows > 0 
+            THEN CAST(1.0 * ISNULL(sp.modification_counter, 0) * 100.0 / pinfo.Total_Rows AS DECIMAL(5,2))
+            ELSE NULL 
+        END AS Change_Percent
+        
+    FROM sys.tables t
+    JOIN sys.stats s 
+        ON s.object_id = t.object_id
+    CROSS APPLY (
+        SELECT SUM(p.rows) AS Total_Rows
+        FROM sys.partitions p
+        WHERE p.object_id = t.object_id 
+          AND p.index_id IN (0,1)
+    ) pinfo
+    OUTER APPLY sys.dm_db_stats_properties(s.object_id, s.stats_id) sp
+    WHERE s.auto_created = 1 
+       OR s.user_created = 1
+       and t.name = 'Viagem_Embarcador'
+)
+SELECT 
+    DBName,
+    ObjName,
+    Stat_Name,
+    Stat_ID,
+    Last_Updated,
+    Modification_Counter,
+    SamplePercent,
+    Total_Rows,
+    Change_Percent,
+    Update_Command
+FROM StatsData
+WHERE 
+    DBName = 'Angellira'
+    --AND Last_Updated <= DATEADD(DAY, -5, GETDATE())
+    and ObjName like ('%Viagem_Embarcador%')
+    -- Uncomment below lines for additional filtering:
+    -- AND Total_Rows < 3000000
+    -- AND Modification_Counter > 1000
+    -- AND Change_Percent > 1.0  -- Filter statistics with >1% changes
+ORDER BY 
+    Change_Percent DESC,         -- Primary sort by highest change percentage
+    Modification_Counter DESC;
