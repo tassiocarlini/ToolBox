@@ -1,3 +1,4 @@
+-- Fragmentação 1 TABELA
 SELECT index_id, avg_fragmentation_in_percent
 FROM sys.dm_db_index_physical_stats(DB_ID(), OBJECT_ID('CTC010'), NULL, NULL, 'LIMITED');
 
