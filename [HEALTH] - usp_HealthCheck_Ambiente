@@ -1,0 +1,190 @@
+/**********************************************************************************************************************
+* NOME: usp_HealthCheck_Ambiente
+*
+* OBJETIVO: Realizar uma verificação de saúde (Health Check) em pontos críticos da instância SQL Server.
+*
+* AUTOR: [Tassio/R2D2]
+*
+* DATA DE CRIAÇÃO: 06/10/2025
+* DATA DE ALTERAÇÃO: 06/10/2025 - REMOVIDA função instável 'sys.fn_cdc_map_lsn_to_time'. Lógica de latência
+* agora consulta diretamente a tabela 'cdc.lsn_time_mapping'.
+*
+* DESCRIÇÃO DETALHADA:
+*		#Validar Latência Real do CDC (em segundos)
+*		#Status do Job de Manutenção
+*		#Utilização do Arquivo de Log
+*		#Status Crítico do Log por Replicação/CDC
+*		#Page Life Expectancy (PLE)
+*		#Locks
+*		#SPIDs Antigos
+*		#Latência de Disco (I/O)
+*
+* COMO USAR:
+* EXEC dbo.usp_HealthCheck_Ambiente;
+*
+**********************************************************************************************************************/
+CREATE OR ALTER PROCEDURE dbo.usp_HealthCheck_Ambiente
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    PRINT '=====================================================================';
+    PRINT '==         INÍCIO DO HEALTH CHECK DO AMBIENTE SQL SERVER           ==';
+    PRINT '==                Data: ' + CONVERT(VARCHAR, GETDATE(), 120) + '                  ==';
+    PRINT '=====================================================================';
+    PRINT CHAR(10);
+
+    -- =====================================================================
+    -- 1. LATÊNCIA REAL DO CDC (EM SEGUNDOS)
+    -- =====================================================================
+    PRINT '--- 1. Latência Real do CDC (em segundos) ---';
+    PRINT 'INFO: Mede o tempo de atraso entre a hora atual e a hora da última transação processada pelo CDC.';
+    
+    IF EXISTS (SELECT 1 FROM sys.databases WHERE is_cdc_enabled = 1)
+    BEGIN
+        IF OBJECT_ID('tempdb..#CDCLatencyReal') IS NOT NULL DROP TABLE #CDCLatencyReal;
+        CREATE TABLE #CDCLatencyReal (DatabaseName NVARCHAR(128), LastProcessedTransactionTime DATETIME, LatencySeconds INT);
+
+        DECLARE @db_name_cdc NVARCHAR(128);
+        DECLARE @sql_cdc NVARCHAR(MAX);
+        DECLARE @params NVARCHAR(MAX);
+
+        SET @params = N'@db_name_param NVARCHAR(128)';
+
+        DECLARE cdc_cursor CURSOR FOR
+        SELECT name FROM sys.databases WHERE is_cdc_enabled = 1 AND state_desc = 'ONLINE';
+
+        OPEN cdc_cursor;
+        FETCH NEXT FROM cdc_cursor INTO @db_name_cdc;
+
+        WHILE @@FETCH_STATUS = 0
+        BEGIN
+            -- LÓGICA FINAL: Consulta direta na tabela de mapeamento, evitando a função problemática.
+            SET @sql_cdc = N'USE ' + QUOTENAME(@db_name_cdc) + N';
+                           DECLARE @processed_time DATETIME;
+                           
+                           -- Pega a data/hora da última transação registrada na tabela de mapeamento do CDC
+                           SELECT @processed_time = MAX(tran_end_time) FROM cdc.lsn_time_mapping;
+
+                           IF @processed_time IS NOT NULL
+                           BEGIN
+                               INSERT INTO #CDCLatencyReal (DatabaseName, LastProcessedTransactionTime, LatencySeconds)
+                               VALUES (
+                                   @db_name_param,
+                                   @processed_time,
+                                   DATEDIFF(second, @processed_time, GETDATE())
+                               );
+                           END';
+            
+            EXEC sp_executesql @sql_cdc, @params, @db_name_param = @db_name_cdc;
+
+            FETCH NEXT FROM cdc_cursor INTO @db_name_cdc;
+        END;
+
+        CLOSE cdc_cursor;
+        DEALLOCATE cdc_cursor;
+
+        SELECT '1_Latencia_Real_CDC' AS Ponto_de_Verificacao, * FROM #CDCLatencyReal;
+        DROP TABLE #CDCLatencyReal;
+    END
+    ELSE
+    BEGIN
+        PRINT 'INFO: Nenhum banco de dados com CDC habilitado foi encontrado.';
+    END
+    PRINT CHAR(10);
+    
+    -- O restante da procedure continua igual...
+
+    -- =====================================================================
+    -- 2. STATUS DO JOB DE MANUTENÇÃO
+    -- =====================================================================
+    PRINT '--- 2. Status da última execução do Job "Totvs | DBA Cloud - Maintenance" ---';
+    IF EXISTS (SELECT 1 FROM msdb.dbo.sysjobs WHERE name = 'Totvs | DBA Cloud - Maintenance')
+    BEGIN
+        SELECT TOP 1 '2_Status_Job_Manutencao' AS Ponto_de_Verificacao, j.name AS JobName, msdb.dbo.agent_datetime(h.run_date, h.run_time) AS LastRunDateTime,
+            CASE h.run_status WHEN 0 THEN 'Falhou' WHEN 1 THEN 'Sucesso' WHEN 2 THEN 'Tentando Novamente' WHEN 3 THEN 'Cancelado' ELSE 'Status Desconhecido' END AS RunStatus,
+            h.message AS Message
+        FROM msdb.dbo.sysjobs AS j INNER JOIN msdb.dbo.sysjobhistory AS h ON j.job_id = h.job_id
+        WHERE j.name = 'Totvs | DBA Cloud - Maintenance' AND h.step_id = 0 ORDER BY LastRunDateTime DESC;
+    END
+    ELSE
+    BEGIN
+        PRINT 'INFO: Job "Totvs | DBA Cloud - Maintenance" não encontrado.';
+    END
+    PRINT CHAR(10);
+
+    -- =====================================================================
+    -- 3. UTILIZAÇÃO DO ARQUIVO DE LOG (Databases > 4)
+    -- =====================================================================
+    PRINT '--- 3. Utilização do Arquivo de Log (%) ---';
+    IF OBJECT_ID('tempdb..#LogUsage') IS NOT NULL DROP TABLE #LogUsage;
+    CREATE TABLE #LogUsage ([Database] NVARCHAR(128), [Tamanho Total Log (MB)] DECIMAL(18,2), [Espaço Usado Log (MB)] DECIMAL(18,2), [Percentual Usado (%)] DECIMAL(5,2), [Motivo de Espera de Reutilização] NVARCHAR(60));
+    DECLARE @db_name_log NVARCHAR(128), @sql_log NVARCHAR(MAX);
+    DECLARE log_cursor CURSOR FOR SELECT name FROM sys.databases WHERE database_id > 4 AND state_desc = 'ONLINE';
+    OPEN log_cursor; FETCH NEXT FROM log_cursor INTO @db_name_log;
+    WHILE @@FETCH_STATUS = 0
+    BEGIN
+        SET @sql_log = N'USE ' + QUOTENAME(@db_name_log) + N'; INSERT INTO #LogUsage SELECT DB_NAME(), ls.total_log_size_in_bytes / 1024.0 / 1024.0, ls.used_log_space_in_bytes / 1024.0 / 1024.0, ls.used_log_space_in_percent, db.log_reuse_wait_desc FROM sys.dm_db_log_space_usage AS ls CROSS JOIN sys.databases AS db WHERE db.database_id = DB_ID();';
+        EXEC sp_executesql @sql_log; FETCH NEXT FROM log_cursor INTO @db_name_log;
+    END
+    CLOSE log_cursor; DEALLOCATE log_cursor;
+    SELECT '3_Utilizacao_Arquivo_Log' AS Ponto_de_Verificacao, * FROM #LogUsage ORDER BY [Percentual Usado (%)] DESC;
+    DROP TABLE #LogUsage;
+    PRINT CHAR(10);
+    
+    -- =====================================================================
+    -- 4. STATUS CRÍTICO DO LOG POR REPLICAÇÃO/CDC
+    -- =====================================================================
+    PRINT '--- 4. Status Crítico do Log por Replicação/CDC ---';
+    PRINT 'INFO: Verifica se o log está BLOQUEADO por causa de latência no CDC ou Replicação. Este é um alerta crítico.';
+    SELECT '4_Status_Critico_Log_Repl_CDC' AS Ponto_de_Verificacao, name AS [Database], log_reuse_wait_desc AS [Status_Bloqueio_Log]
+    FROM sys.databases WHERE log_reuse_wait_desc IN ('REPLICATION', 'CDC');
+    PRINT CHAR(10);
+
+    -- =====================================================================
+    -- 5. PAGE LIFE EXPECTANCY (PLE)
+    -- =====================================================================
+    PRINT '--- 5. Page Life Expectancy (PLE) ---';
+    SELECT '5_Page_Life_Expectancy_PLE' AS Ponto_de_Verificacao, cntr_value AS [PLE_Value_in_Seconds]
+    FROM sys.dm_os_performance_counters WHERE object_name LIKE '%Buffer Manager%' AND counter_name = 'Page life expectancy';
+    PRINT CHAR(10);
+    
+    -- =====================================================================
+    -- 6. LOCKS
+    -- =====================================================================
+    PRINT '--- 6. Resumo de Locks Atuais ---';
+    SELECT '6_Resumo_Locks_Atuais' AS Ponto_de_Verificacao, resource_type, request_mode, COUNT(*) AS LockCount
+    FROM sys.dm_tran_locks WHERE resource_type <> 'DATABASE' GROUP BY resource_type, request_mode ORDER BY LockCount DESC;
+    PRINT CHAR(10);
+    
+    -- =====================================================================
+    -- 7. SPIDS ANTIGOS (EM EXECUÇÃO HÁ MAIS DE 1 DIA)
+    -- =====================================================================
+    PRINT '--- 7. SPIDs em execução há mais de 1 dia ---';
+    SELECT '7_SPIDs_Antigos_Mais_de_1_Dia' AS Ponto_de_Verificacao, s.session_id, s.login_name, s.host_name, s.program_name,
+        s.login_time, DATEDIFF(hour, s.login_time, GETDATE()) AS 'HorasAtivo', s.status, st.text AS 'LastSQLText'
+    FROM sys.dm_exec_sessions AS s LEFT JOIN sys.dm_exec_connections AS c ON s.session_id = c.session_id
+    OUTER APPLY sys.dm_exec_sql_text(c.most_recent_sql_handle) AS st
+    WHERE s.is_user_process = 1 AND s.login_time < DATEADD(day, -1, GETDATE()) ORDER BY s.login_time ASC;
+    PRINT CHAR(10);
+
+    -- =====================================================================
+    -- 8. LATÊNCIA DE DISCO (IO)
+    -- =====================================================================
+    PRINT '--- 8. Latência de Disco (Média em ms) ---';
+    SELECT '8_Latencia_Disco_IO' AS Ponto_de_Verificacao, DB_NAME(fs.database_id) AS [Database], mf.physical_name AS [Arquivo],
+        fs.io_stall_read_ms AS [Total Read Stall (ms)], fs.num_of_reads AS [Total Reads],
+        CAST(fs.io_stall_read_ms / NULLIF(fs.num_of_reads, 0) AS DECIMAL(10, 2)) AS [Latência Média Leitura (ms)],
+        fs.io_stall_write_ms AS [Total Write Stall (ms)], fs.num_of_writes AS [Total Writes],
+        CAST(fs.io_stall_write_ms / NULLIF(fs.num_of_writes, 0) AS DECIMAL(10, 2)) AS [Latência Média Escrita (ms)]
+    FROM sys.dm_io_virtual_file_stats(NULL, NULL) AS fs
+    INNER JOIN sys.master_files AS mf ON fs.database_id = mf.database_id AND fs.file_id = mf.file_id
+    WHERE fs.num_of_reads > 0 OR fs.num_of_writes > 0 ORDER BY [Latência Média Leitura (ms)] DESC, [Latência Média Escrita (ms)] DESC;
+    PRINT CHAR(10);
+
+    PRINT '=====================================================================';
+    PRINT '==                   FIM DO HEALTH CHECK                           ==';
+    PRINT '=====================================================================';
+
+END;
+GO
