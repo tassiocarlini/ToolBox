@@ -1,0 +1,105 @@
+USE [msdb]
+GO
+/***
+Autor: Thiago Neves
+**/
+/****** Object:  Job [Totvs | DBA Cloud - Truncate  MP_CUSTOM_METRICS_EXP]    Script Date: 13/10/2025 11:39:58 ******/
+BEGIN TRANSACTION
+DECLARE @ReturnCode INT
+SELECT @ReturnCode = 0
+/****** Object:  JobCategory [Data Collector]    Script Date: 13/10/2025 11:39:58 ******/
+IF NOT EXISTS (SELECT name FROM msdb.dbo.syscategories WHERE name=N'Data Collector' AND category_class=1)
+BEGIN
+EXEC @ReturnCode = msdb.dbo.sp_add_category @class=N'JOB', @type=N'LOCAL', @name=N'Data Collector'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+
+END
+
+DECLARE @jobId BINARY(16)
+EXEC @ReturnCode =  msdb.dbo.sp_add_job @job_name=N'Totvs | DBA Cloud - Truncate  MP_CUSTOM_METRICS_EXP', 
+		@enabled=1, 
+		@notify_level_eventlog=0, 
+		@notify_level_email=0, 
+		@notify_level_netsend=0, 
+		@notify_level_page=0, 
+		@delete_level=0, 
+		@description=N'No description available.', 
+		@category_name=N'Data Collector', 
+		@owner_login_name=N'JCStack', @job_id = @jobId OUTPUT
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+/****** Object:  Step [Truncate]    Script Date: 13/10/2025 11:39:58 ******/
+EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'Truncate', 
+		@step_id=1, 
+		@cmdexec_success_code=0, 
+		@on_success_action=1, 
+		@on_success_step_id=0, 
+		@on_fail_action=2, 
+		@on_fail_step_id=0, 
+		@retry_attempts=1, 
+		@retry_interval=10, 
+		@os_run_priority=0, @subsystem=N'TSQL', 
+		@command=N'DECLARE @StartTime DATETIME = GETDATE();
+DECLARE @TimeoutReached BIT = 0;
+DECLARE @RetryCount INT = 0;
+DECLARE @MaxRetries INT = 5;
+
+-- Define timeout de lock (2 minutos = 120000 ms)
+SET LOCK_TIMEOUT 120000;
+
+WHILE @TimeoutReached = 0
+BEGIN
+    BEGIN TRY
+        -- Tenta limpar a tabela
+        TRUNCATE TABLE MP_CUSTOM_METRICS_EXP;
+
+        BREAK; -- Sai do loop se executou com sucesso
+    END TRY
+    BEGIN CATCH
+        IF ERROR_NUMBER() = -2
+        BEGIN
+            -- Erro de lock timeout
+            IF DATEDIFF(MINUTE, @StartTime, GETDATE()) >= 2
+            BEGIN
+                SET @TimeoutReached = 1;
+                RAISERROR(''Timeout: não foi possível limpar a tabela em 2 minutos'', 16, 1);
+            END
+            ELSE
+            BEGIN
+                -- Aguarda 30 segundos e tenta de novo
+                WAITFOR DELAY ''00:00:30'';
+            END
+        END
+        ELSE
+        BEGIN
+            -- Outros erros: tenta no máximo 5 vezes
+            SET @RetryCount += 1;
+
+            IF @RetryCount > @MaxRetries
+            BEGIN
+                -- Depois de 5 tentativas, repassa o erro
+                THROW;
+            END
+            ELSE
+            BEGIN
+                PRINT CONCAT(''Erro inesperado. Tentativa extra '', @RetryCount, '' de '', @MaxRetries);
+                WAITFOR DELAY ''00:00:30'';
+            END
+        END
+    END CATCH
+END
+', 
+		@database_name=N'CUI82W_149560_PR_PD', 
+		@flags=0
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_update_job @job_id = @jobId, @start_step_id = 1
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_add_jobserver @job_id = @jobId, @server_name = N'(local)'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+COMMIT TRANSACTION
+GOTO EndSave
+QuitWithRollback:
+    IF (@@TRANCOUNT > 0) ROLLBACK TRANSACTION
+EndSave:
+GO
+
+
