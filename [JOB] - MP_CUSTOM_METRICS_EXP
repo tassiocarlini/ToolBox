@@ -2,6 +2,9 @@ USE [msdb]
 GO
 /***
 Autor: Thiago Neves
+Editar NOME BASE, (utiliza Substituir com nome da base abaixo
+@database_name=N'CUI82W_149560_PR_PD', 
+
 **/
 /****** Object:  Job [Totvs | DBA Cloud - Truncate  MP_CUSTOM_METRICS_EXP]    Script Date: 13/10/2025 11:39:58 ******/
 BEGIN TRANSACTION
