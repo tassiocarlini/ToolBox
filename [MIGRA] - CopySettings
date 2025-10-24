@@ -1,0 +1,184 @@
+SET NOCOUNT ON;
+
+-- ********************************************************************************
+-- ** 1. ALTERE AQUI O NOME DO BANCO DE DADOS QUE DESEJA SCRIPTAR        **
+-- ********************************************************************************
+DECLARE @DatabaseName SYSNAME = N'CUI82W_191743_PR_QA'; -- <--- NOME DATABASE
+-- ********************************************************************************
+
+
+-- Variável principal que armazenará todo o script de saída
+DECLARE @FullScript NVARCHAR(MAX) = N'';
+
+-- Verifica se o banco de dados existe antes de começar
+IF DB_ID(@DatabaseName) IS NULL
+BEGIN
+    SELECT N'ERRO: O banco de dados ' + QUOTENAME(@DatabaseName) + N' não foi encontrado. Verifique a variável @DatabaseName.' AS [--- ERRO ---];
+    RETURN;
+END;
+
+-- =================================================================================
+-- CABEÇALHO DO SCRIPT GERADO
+-- =================================================================================
+SET @FullScript += N'/*==================================================================*/' + CHAR(13) + CHAR(10);
+SET @FullScript += N'/* SCRIPT DE CONFIGURAÇÃO GERADO AUTOMATICAMENTE            */' + CHAR(13) + CHAR(10);
+SET @FullScript += N'/* Origem: ' + @@SERVERNAME + '                                    */' + CHAR(13) + CHAR(10);
+SET @FullScript += N'/* Database: ' + QUOTENAME(@DatabaseName) + '                                   */' + CHAR(13) + CHAR(10);
+SET @FullScript += N'/* Gerado em: ' + CONVERT(NVARCHAR, GETDATE(), 120) + '                    */' + CHAR(13) + CHAR(10);
+SET @FullScript += N'/*==================================================================*/' + CHAR(13) + CHAR(10);
+SET @FullScript += N'SET NOCOUNT ON;' + CHAR(13) + CHAR(10);
+SET @FullScript += N'USE [master];' + CHAR(13) + CHAR(10);
+SET @FullScript += N'GO' + CHAR(13) + CHAR(10) + CHAR(13) + CHAR(10);
+
+
+-- =================================================================================
+-- PARTE 1: CONFIGURAÇÕES DE INSTÂNCIA (sp_configure)
+-- =================================================================================
+SET @FullScript += N'/*=================================================*/' + CHAR(13) + CHAR(10);
+SET @FullScript += N'/* 1. CONFIGURAÇÕES DE INSTÂNCIA (sp_configure)    */' + CHAR(13) + CHAR(10);
+SET @FullScript += N'/*=================================================*/' + CHAR(13) + CHAR(10);
+SET @FullScript += N'EXEC sp_configure ''show advanced options'', 1; RECONFIGURE;' + CHAR(13) + CHAR(10) + CHAR(13) + CHAR(10);
+
+-- Concatena todos os sp_configure em uma única string
+SELECT @FullScript += N'EXEC sp_configure ''' + name + N''', ' + CAST(value_in_use AS NVARCHAR(128)) + N';' + CHAR(13) + CHAR(10)
+FROM sys.configurations
+WHERE name IN (
+    'max degree of parallelism',
+    'cost threshold for parallelism',
+    'network packet size (B)', -- <--- Corrigido
+    'max server memory (MB)',
+    'min server memory (MB)',
+    'optimize for ad hoc workloads',
+    'backup compression default',
+    'remote admin connections',
+    'fill factor (%)',
+    'blocked process threshold (s)'
+);
+
+SET @FullScript += CHAR(13) + CHAR(10);
+SET @FullScript += N'RECONFIGURE WITH OVERRIDE;' + CHAR(13) + CHAR(10);
+SET @FullScript += N'GO' + CHAR(13) + CHAR(10);
+SET @FullScript += N'EXEC sp_configure ''show advanced options'', 0; RECONFIGURE;' + CHAR(13) + CHAR(10);
+SET @FullScript += N'GO' + CHAR(13) + CHAR(10) + CHAR(13) + CHAR(10);
+
+
+-- =================================================================================
+-- PARTE 2: CONFIGURAÇÕES DE DATABASE (ALTER DATABASE)
+-- =================================================================================
+SET @FullScript += N'/*=================================================*/' + CHAR(13) + CHAR(10);
+SET @FullScript += N'/* 2. CONFIGURAÇÕES DE DATABASE (ALTER DATABASE)   */' + CHAR(13) + CHAR(10);
+SET @FullScript += N'/* DATABASE: ' + QUOTENAME(@DatabaseName) + '                       */' + CHAR(13) + CHAR(10);
+SET @FullScript += N'/*=================================================*/' + CHAR(13) + CHAR(10);
+SET @FullScript += N'USE [master];' + CHAR(13) + CHAR(10);
+SET @FullScript += N'GO' + CHAR(13) + CHAR(10);
+
+-- Adiciona um aviso sobre o Collation (não pode ser scriptado)
+SELECT 
+    @FullScript += N'/* --- ATENÇÃO: Verifique se o Collation do database destino é o mesmo ---*/' + CHAR(13) + CHAR(10)
+    + N'/* ' + name + N' Collation de Origem: ' + collation_name + N' */' + CHAR(13) + CHAR(10)
+FROM sys.databases 
+WHERE name = @DatabaseName;
+
+-- Gera os comandos ALTER DATABASE
+SELECT 
+    @FullScript += N'ALTER DATABASE ' + QUOTENAME(name) + N' SET COMPATIBILITY_LEVEL = ' + CAST(compatibility_level AS VARCHAR(10)) + N';' + CHAR(13) + CHAR(10)
+    -- + N'ALTER DATABASE ' + QUOTENAME(name) + N' SET RECOVERY ' + recovery_model_desc + N';' + CHAR(13) + CHAR(10) -- <--- *** REMOVIDO CONFORME SOLICITADO ***
+    + N'ALTER DATABASE ' + QUOTENAME(name) + N' SET PAGE_VERIFY ' + page_verify_option_desc + N';' + CHAR(13) + CHAR(10)
+    + N'ALTER DATABASE ' + QUOTENAME(name) + N' SET ' + user_access_desc + N';' + CHAR(13) + CHAR(10)
+    + N'ALTER DATABASE ' + QUOTENAME(name) + N' SET ' + IIF(is_read_only = 1, N'READ_ONLY', N'READ_WRITE') + N';' + CHAR(13) + CHAR(10)
+    + CHAR(13) + CHAR(10)
+    + N'/* -- Estatísticas e ANSI -- */' + CHAR(13) + CHAR(10)
+    + N'ALTER DATABASE ' + QUOTENAME(name) + N' SET AUTO_CREATE_STATISTICS ' + IIF(is_auto_create_stats_on = 1, N'ON', N'OFF') + N';' + CHAR(13) + CHAR(10)
+    + N'ALTER DATABASE ' + QUOTENAME(name) + N' SET AUTO_UPDATE_STATISTICS ' + IIF(is_auto_update_stats_on = 1, N'ON', N'OFF') + N';' + CHAR(13) + CHAR(10)
+    + N'ALTER DATABASE ' + QUOTENAME(name) + N' SET AUTO_UPDATE_STATISTICS_ASYNC ' + IIF(is_auto_update_stats_async_on = 1, N'ON', N'OFF') + N';' + CHAR(13) + CHAR(10)
+    + N'ALTER DATABASE ' + QUOTENAME(name) + N' SET ANSI_NULLS ' + IIF(is_ansi_nulls_on = 1, N'ON', N'OFF') + N';' + CHAR(13) + CHAR(10)
+    + N'ALTER DATABASE ' + QUOTENAME(name) + N' SET ANSI_PADDING ' + IIF(is_ansi_padding_on = 1, N'ON', N'OFF') + N';' + CHAR(13) + CHAR(10)
+    + N'ALTER DATABASE ' + QUOTENAME(name) + N' SET ANSI_WARNINGS ' + IIF(is_ansi_warnings_on = 1, N'ON', N'OFF') + N';' + CHAR(13) + CHAR(10)
+    + N'ALTER DATABASE ' + QUOTENAME(name) + N' SET QUOTED_IDENTIFIER ' + IIF(is_quoted_identifier_on = 1, N'ON', N'OFF') + N';' + CHAR(13) + CHAR(10)
+    + CHAR(13) + CHAR(10)
+    + N'/* -- Concorrência e Performance -- */' + CHAR(13) + CHAR(10)
+    + N'ALTER DATABASE ' + QUOTENAME(name) + N' SET PARAMETERIZATION ' + IIF(is_parameterization_forced = 1, N'FORCED', N'SIMPLE') + N';' + CHAR(13) + CHAR(10)
+    + N'ALTER DATABASE ' + QUOTENAME(name) + N' SET READ_COMMITTED_SNAPSHOT ' + IIF(is_read_committed_snapshot_on = 1, N'ON', N'OFF') + N';' + CHAR(13) + CHAR(10)
+    + N'ALTER DATABASE ' + QUOTENAME(name) + N' SET ALLOW_SNAPSHOT_ISOLATION ' + IIF(snapshot_isolation_state_desc = 'ON', N'ON', N'OFF') + N';' + CHAR(13) + CHAR(10)
+    + N'ALTER DATABASE ' + QUOTENAME(name) + N' SET QUERY_STORE = ' + IIF(is_query_store_on = 1, N'ON', N'OFF') + N';' + CHAR(13) + CHAR(10)
+FROM sys.databases
+WHERE name = @DatabaseName;
+
+SET @FullScript += N'GO' + CHAR(13) + CHAR(10) + CHAR(13) + CHAR(10);
+
+
+-- =================================================================================
+-- PARTE 3: CONFIGURAÇÕES DE ESCOPO DE DATABASE (CORRIGIDA)
+-- =================================================================================
+SET @FullScript += N'/*=================================================*/' + CHAR(13) + CHAR(10);
+SET @FullScript += N'/* 3. CONFIGS DE ESCOPO DE DB (SCOPED CONFIG)    */' + CHAR(13) + CHAR(10);
+SET @FullScript += N'/* DATABASE: ' + QUOTENAME(@DatabaseName) + '                       */' + CHAR(13) + CHAR(10);
+SET @FullScript += N'/*=================================================*/' + CHAR(13) + CHAR(10);
+SET @FullScript += N'USE ' + QUOTENAME(@DatabaseName) + ';' + CHAR(13) + CHAR(10);
+SET @FullScript += N'GO' + CHAR(13) + CHAR(10);
+
+-- SQL dinâmico para buscar as configurações de escopo do database alvo
+DECLARE @scopedSqlXml NVARCHAR(MAX) = N'';
+DECLARE @scopedQueryXml NVARCHAR(MAX) = N'
+USE ' + QUOTENAME(@DatabaseName) + N';
+SELECT @sqlOut = (
+    SELECT (
+        SELECT N''ALTER DATABASE SCOPED CONFIGURATION SET '' + name + N'' = '' +
+            CASE
+                -- 1. Trata casos especiais primeiro (ex: ..._FOR_SECONDARY)
+                WHEN name LIKE ''%_FOR_SECONDARY'' 
+                THEN 
+                    CASE 
+                        -- Se o valor for numérico (1=PRIMARY, 0=OFF)
+                        WHEN SQL_VARIANT_PROPERTY(value, ''BaseType'') IN (''int'', ''tinyint'', ''smallint'') 
+                        THEN IIF(CAST(value AS INT) = 1, N''PRIMARY'', N''OFF'')
+                        -- Se já for texto (''PRIMARY'' ou ''OFF'')
+                        ELSE N'''''''' + CAST(value AS NVARCHAR(MAX)) + N''''''''
+                    END
+
+                -- 2. Trata todos os numéricos (inclui booleanos 1/0)
+                WHEN SQL_VARIANT_PROPERTY(value, ''BaseType'') IN (
+                    ''int'', ''tinyint'', ''smallint'', ''bigint'', ''numeric'', ''decimal''
+                    )
+                THEN CAST(value AS NVARCHAR(128))
+                
+                -- 3. Trata todas as strings (inclui booleanos ''ON''/''OFF'' e endpoints)
+                WHEN SQL_VARIANT_PROPERTY(value, ''BaseType'') IN (
+                    ''char'', ''varchar'', ''nchar'', ''nvarchar''
+                    )
+                THEN N'''''''' + CAST(value AS NVARCHAR(MAX)) + N'''''''' -- 4 aspas = 1 aspa literal
+
+                -- 4. Fallback (trata como string)
+                ELSE N'''''''' + CAST(value AS NVARCHAR(MAX)) + N''''''''
+            END + N'';'' + NCHAR(13) + NCHAR(10) -- Use NCHAR para quebras de linha
+        FROM sys.database_scoped_configurations
+        FOR XML PATH(N''''), TYPE
+    ).value(N''.[1]'', N''NVARCHAR(MAX)'') -- Decodifica o XML
+);';
+
+-- Verifica se a view existe (SQL 2016+)
+IF EXISTS (SELECT 1 FROM sys.all_objects WHERE name = 'database_scoped_configurations')
+BEGIN
+    EXEC sp_executesql @scopedQueryXml, N'@sqlOut NVARCHAR(MAX) OUTPUT', @sqlOut = @scopedSqlXml OUTPUT;
+    SET @FullScript += ISNULL(@scopedSqlXml, N'/* Nenhuma config de escopo encontrada ou SQL < 2016 */');
+END
+ELSE
+BEGIN
+    SET @FullScript += N'/* AVISO: sys.database_scoped_configurations não existe nesta versão do SQL (Origem < 2016). */' + CHAR(13) + CHAR(10);
+END
+
+SET @FullScript += N'GO' + CHAR(13) + CHAR(10);
+SET @FullScript += N'USE [master];' + CHAR(13) + CHAR(10);
+SET @FullScript += N'GO' + CHAR(13) + CHAR(10) + CHAR(13) + CHAR(10);
+SET @FullScript += N'PRINT ''Script de configuração de ambiente concluído com sucesso.'';' + CHAR(13) + CHAR(10);
+
+
+-- =================================================================================
+-- SAÍDA FINAL (CORRIGIDA)
+-- =================================================================================
+SET NOCOUNT OFF;
+
+-- Encapsula a conversão FOR XML em uma subquery e apelida o resultado (AS).
+-- Isso é sintaticamente correto e força o SSMS a criar o link XML.
+SELECT (SELECT @FullScript FOR XML PATH('SQL_SCRIPT'), TYPE)
+AS [--- Clique_neste_LINK_AZUL_para_abrir_o_script ---];
