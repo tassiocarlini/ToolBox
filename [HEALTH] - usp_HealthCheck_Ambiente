@@ -1,12 +1,20 @@
+USE [master]
+GO
+
+/****** Object:  StoredProcedure [dbo].[usp_HealthCheck_Ambiente]    Script Date: 28/10/2025 13:18:34 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
 /**********************************************************************************************************************
 * NOME: usp_HealthCheck_Ambiente
-*
-* OBJETIVO: Realizar uma verificação de saúde (Health Check) em pontos críticos da instância SQL Server.
 *
 * AUTOR: [Tassio/R2D2]
 *
 * DATA DE CRIAÇÃO: 06/10/2025
-* DATA DE ALTERAÇÃO: 09/10/2025 - Padronizado filtro database_id > 5 para todas as checagens a nível de BD.
+* DATA DE ALTERAÇÃO: 23/10/2025 - Corrigida Seção 5 para compatibilidade com versões anteriores do SQL Server.
 *
 * DESCRIÇÃO DETALHADA:
 * A procedure executa as seguintes validações:
@@ -14,18 +22,18 @@
 * 2. Status de Jobs de Manutenção
 * 3. Utilização de Arquivo de Log
 * 4. Configurações de Paralelismo (MAXDOP)
-* 5. Configurações de Banco de Dados
+* 5. Configurações de Banco de Dados (Compatibilidade, Stats, Cardinalidade, Parametrização)
 * 6. Status Crítico do Log por Replicação/CDC
 * 7. Page Life Expectancy (PLE)
-* 8. Locks de Longa Duração (> 30s)
-* 9. SPIDs Antigos
+* 8. Locks de Longa Duração (> 3 min)
+* 9. SPIDs Antigos (com filtro de exclusão)
 * 10. Latência de Disco
 *
 * COMO USAR:
 * EXEC dbo.usp_HealthCheck_Ambiente;
 *
 **********************************************************************************************************************/
-CREATE OR ALTER PROCEDURE dbo.usp_HealthCheck_Ambiente
+CREATE   PROCEDURE [dbo].[usp_HealthCheck_Ambiente]
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -42,13 +50,13 @@ BEGIN
     PRINT '--- 1. Latência Real do CDC (em segundos) ---';
     PRINT 'INFO: Mede o tempo de atraso para bancos com database_id > 5.';
     
+    IF OBJECT_ID('tempdb..#CDCLatencyReal') IS NOT NULL DROP TABLE #CDCLatencyReal;
+    CREATE TABLE #CDCLatencyReal (DatabaseName NVARCHAR(128), LastProcessedTransactionTime DATETIME, LatencySeconds INT);
+
     IF EXISTS (SELECT 1 FROM sys.databases WHERE is_cdc_enabled = 1 AND database_id > 5)
     BEGIN
-        IF OBJECT_ID('tempdb..#CDCLatencyReal') IS NOT NULL DROP TABLE #CDCLatencyReal;
-        CREATE TABLE #CDCLatencyReal (DatabaseName NVARCHAR(128), LastProcessedTransactionTime DATETIME, LatencySeconds INT);
         DECLARE @db_name_cdc NVARCHAR(128), @sql_cdc NVARCHAR(MAX), @params NVARCHAR(MAX);
         SET @params = N'@db_name_param NVARCHAR(128)';
-        -- AJUSTE: Adicionado filtro database_id > 5
         DECLARE cdc_cursor CURSOR FOR SELECT name FROM sys.databases WHERE is_cdc_enabled = 1 AND state_desc = 'ONLINE' AND database_id > 5;
         OPEN cdc_cursor; FETCH NEXT FROM cdc_cursor INTO @db_name_cdc;
         WHILE @@FETCH_STATUS = 0
@@ -65,30 +73,54 @@ BEGIN
             FETCH NEXT FROM cdc_cursor INTO @db_name_cdc;
         END;
         CLOSE cdc_cursor; DEALLOCATE cdc_cursor;
-        SELECT '1_Latencia_Real_CDC' AS Ponto_de_Verificacao, * FROM #CDCLatencyReal;
-        DROP TABLE #CDCLatencyReal;
-    END
-    ELSE
+    END;
+
+    SELECT '1_Latencia_Real_CDC' AS Ponto_de_Verificacao, * FROM #CDCLatencyReal;
+    IF @@ROWCOUNT = 0
     BEGIN
-        PRINT 'INFO: Nenhum banco de dados com CDC habilitado e database_id > 5 foi encontrado.';
+        SELECT '1_Latencia_Real_CDC' AS Ponto_de_Verificacao, 'Nenhum BD com CDC habilitado (ID > 5)' AS DatabaseName, NULL AS LastProcessedTransactionTime, NULL AS LatencySeconds;
     END
+    DROP TABLE #CDCLatencyReal;
     PRINT CHAR(10);
     
     -- =====================================================================
-    -- 2. STATUS DO JOB DE MANUTENÇÃO (NÍVEL DE INSTÂNCIA)
+    -- 2. STATUS DOS JOBS DE MANUTENÇÃO (NÍVEL DE INSTÂNCIA)
     -- =====================================================================
-    PRINT '--- 2. Status da última execução do Job "Totvs | DBA Cloud - Maintenance" ---';
-    IF EXISTS (SELECT 1 FROM msdb.dbo.sysjobs WHERE name = 'Totvs | DBA Cloud - Maintenance')
+    PRINT '--- 2. Status da última execução dos Jobs de Manutenção ---';
+    
+    WITH JobHistory AS (
+        SELECT
+            j.name AS JobName,
+            msdb.dbo.agent_datetime(h.run_date, h.run_time) AS LastRunDateTime,
+            h.run_status,
+            ROW_NUMBER() OVER(PARTITION BY j.name ORDER BY msdb.dbo.agent_datetime(h.run_date, h.run_time) DESC) AS RowNum
+        FROM
+            msdb.dbo.sysjobs AS j
+        INNER JOIN
+            msdb.dbo.sysjobhistory AS h ON j.job_id = h.job_id
+        WHERE
+            j.name IN ('Totvs | DBA Cloud - Maintenance', 'Totvs | DBA Cloud - Maintenance - Rebuild')
+            AND h.step_id = 0
+    )
+    SELECT
+        '2_Status_Jobs_Manutencao' AS Ponto_de_Verificacao,
+        JobName,
+        LastRunDateTime,
+        CASE run_status
+            WHEN 0 THEN 'Falhou'
+            WHEN 1 THEN 'Sucesso'
+            WHEN 2 THEN 'Tentando Novamente'
+            WHEN 3 THEN 'Cancelado'
+            ELSE 'Status Desconhecido'
+        END AS RunStatus
+    FROM
+        JobHistory
+    WHERE
+        RowNum = 1;
+    
+    IF @@ROWCOUNT = 0
     BEGIN
-        SELECT TOP 1 '2_Status_Job_Manutencao' AS Ponto_de_Verificacao, j.name AS JobName, msdb.dbo.agent_datetime(h.run_date, h.run_time) AS LastRunDateTime,
-            CASE h.run_status WHEN 0 THEN 'Falhou' WHEN 1 THEN 'Sucesso' WHEN 2 THEN 'Tentando Novamente' WHEN 3 THEN 'Cancelado' ELSE 'Status Desconhecido' END AS RunStatus,
-            h.message AS Message
-        FROM msdb.dbo.sysjobs AS j INNER JOIN msdb.dbo.sysjobhistory AS h ON j.job_id = h.job_id
-        WHERE j.name = 'Totvs | DBA Cloud - Maintenance' AND h.step_id = 0 ORDER BY LastRunDateTime DESC;
-    END
-    ELSE
-    BEGIN
-        PRINT 'INFO: Job "Totvs | DBA Cloud - Maintenance" não encontrado.';
+        SELECT '2_Status_Jobs_Manutencao' AS Ponto_de_Verificacao, 'Nenhum dos jobs foi encontrado ou executado' AS JobName, NULL AS LastRunDateTime, 'N/A' AS RunStatus;
     END
     PRINT CHAR(10);
 
@@ -99,7 +131,6 @@ BEGIN
     IF OBJECT_ID('tempdb..#LogUsage') IS NOT NULL DROP TABLE #LogUsage;
     CREATE TABLE #LogUsage ([Database] NVARCHAR(128), [Tamanho Total Log (MB)] DECIMAL(18,2), [Espaço Usado Log (MB)] DECIMAL(18,2), [Percentual Usado (%)] DECIMAL(5,2), [Motivo de Espera de Reutilização] NVARCHAR(60));
     DECLARE @db_name_log NVARCHAR(128), @sql_log NVARCHAR(MAX);
-    -- AJUSTE: Adicionado filtro database_id > 5
     DECLARE log_cursor CURSOR FOR SELECT name FROM sys.databases WHERE database_id > 5 AND state_desc = 'ONLINE';
     OPEN log_cursor; FETCH NEXT FROM log_cursor INTO @db_name_log;
     WHILE @@FETCH_STATUS = 0
@@ -108,7 +139,12 @@ BEGIN
         EXEC sp_executesql @sql_log; FETCH NEXT FROM log_cursor INTO @db_name_log;
     END
     CLOSE log_cursor; DEALLOCATE log_cursor;
+
     SELECT '3_Utilizacao_Arquivo_Log' AS Ponto_de_Verificacao, * FROM #LogUsage ORDER BY [Percentual Usado (%)] DESC;
+    IF @@ROWCOUNT = 0
+    BEGIN
+         SELECT '3_Utilizacao_Arquivo_Log' AS Ponto_de_Verificacao, 'Nenhum BD encontrado (ID > 5)' AS [Database], NULL AS [Tamanho Total Log (MB)], NULL AS [Espaço Usado Log (MB)], NULL AS [Percentual Usado (%)], NULL AS [Motivo de Espera de Reutilização];
+    END
     DROP TABLE #LogUsage;
     PRINT CHAR(10);
 
@@ -118,7 +154,6 @@ BEGIN
     PRINT '--- 4. Configurações de Paralelismo (MAXDOP e Cost Threshold) ---';
     PRINT 'INFO: Verifica as configurações de paralelismo da instância.';
     PRINT '      Boas práticas sugerem Cost Threshold > 30 e MAXDOP <= 8 (ou <= nº de cores em um nó NUMA).';
-
     SELECT
         '4_Config_Paralelismo' AS Ponto_de_Verificacao,
         (SELECT value_in_use FROM sys.configurations WHERE name = 'max degree of parallelism') AS [MAXDOP_Configurado],
@@ -130,22 +165,46 @@ BEGIN
     -- =====================================================================
     PRINT '--- 5. Configurações de Banco de Dados (para database_id > 5) ---';
     PRINT 'INFO: Verifica configurações a nível de banco que afetam o otimizador de consultas.';
-
-    SELECT
-        '5_Config_Databases' AS Ponto_de_Verificacao,
-        d.name AS [Database],
-        d.compatibility_level AS [Nivel_Compatibilidade],
-        d.is_auto_create_stats_on AS [Auto_Create_Stats],
-        lce.value AS [Legacy_Cardinality_On]
-    FROM
-        sys.databases AS d
-    LEFT JOIN
-        sys.database_scoped_configurations AS lce
-        ON d.database_id = lce.database_id AND lce.name = 'LEGACY_CARDINALITY_ESTIMATION'
-    WHERE
-        d.database_id > 5 AND d.state_desc = 'ONLINE'
-    ORDER BY
-        d.name;
+    
+    IF OBJECT_ID('tempdb..#DbConfigs') IS NOT NULL DROP TABLE #DbConfigs;
+    CREATE TABLE #DbConfigs (
+        [Database] NVARCHAR(128), 
+        [Nivel_Compatibilidade] TINYINT, 
+        [Auto_Create_Stats] BIT, 
+        [Legacy_Cardinality_On] BIT,
+        [Parameterization] NVARCHAR(60)
+    );
+    DECLARE @db_name_conf NVARCHAR(128), @sql_conf NVARCHAR(MAX);
+    DECLARE conf_cursor CURSOR FOR SELECT name FROM sys.databases WHERE database_id > 5 AND state_desc = 'ONLINE';
+    OPEN conf_cursor; FETCH NEXT FROM conf_cursor INTO @db_name_conf;
+    WHILE @@FETCH_STATUS = 0
+    BEGIN
+        -- CORREÇÃO: Trocado 'parameterization_option_desc' por 'is_parameterization_forced'
+        SET @sql_conf = N'USE ' + QUOTENAME(@db_name_conf) + N';
+                        INSERT INTO #DbConfigs ([Database], [Nivel_Compatibilidade], [Auto_Create_Stats], [Legacy_Cardinality_On], [Parameterization])
+                        SELECT
+                            DB_NAME(),
+                            d.compatibility_level,
+                            d.is_auto_create_stats_on,
+                            ISNULL(CAST(lce.value AS BIT), 0),
+                            CASE WHEN d.is_parameterization_forced = 1 THEN ''FORCED'' ELSE ''SIMPLE'' END
+                        FROM
+                            sys.databases AS d
+                        LEFT JOIN
+                            sys.database_scoped_configurations AS lce ON lce.name = ''LEGACY_CARDINALITY_ESTIMATION''
+                        WHERE
+                            d.database_id = DB_ID();';
+        EXEC sp_executesql @sql_conf;
+        FETCH NEXT FROM conf_cursor INTO @db_name_conf;
+    END
+    CLOSE conf_cursor; DEALLOCATE conf_cursor;
+    
+    SELECT '5_Config_Databases' AS Ponto_de_Verificacao, * FROM #DbConfigs ORDER BY [Database];
+    IF @@ROWCOUNT = 0
+    BEGIN
+        SELECT '5_Config_Databases' AS Ponto_de_Verificacao, 'Nenhum BD encontrado (ID > 5)' AS [Database], NULL AS [Nivel_Compatibilidade], NULL AS [Auto_Create_Stats], NULL AS [Legacy_Cardinality_On], NULL AS [Parameterization];
+    END
+    DROP TABLE #DbConfigs;
     PRINT CHAR(10);
     
     -- =====================================================================
@@ -153,9 +212,16 @@ BEGIN
     -- =====================================================================
     PRINT '--- 6. Status Crítico do Log por Replicação/CDC ---';
     PRINT 'INFO: Verifica se o log está BLOQUEADO para bancos com database_id > 5.';
-    -- AJUSTE: Adicionado filtro database_id > 5
-    SELECT '6_Status_Critico_Log_Repl_CDC' AS Ponto_de_Verificacao, name AS [Database], log_reuse_wait_desc AS [Status_Bloqueio_Log]
-    FROM sys.databases WHERE log_reuse_wait_desc IN ('REPLICATION', 'CDC') AND database_id > 5;
+
+    IF EXISTS (SELECT 1 FROM sys.databases WHERE log_reuse_wait_desc IN ('REPLICATION', 'CDC') AND database_id > 5)
+    BEGIN
+        SELECT '6_Status_Critico_Log_Repl_CDC' AS Ponto_de_Verificacao, name AS [Database], log_reuse_wait_desc AS [Status_Bloqueio_Log]
+        FROM sys.databases WHERE log_reuse_wait_desc IN ('REPLICATION', 'CDC') AND database_id > 5;
+    END
+    ELSE
+    BEGIN
+        SELECT '6_Status_Critico_Log_Repl_CDC' AS Ponto_de_Verificacao, 'Nenhum problema encontrado' AS [Database], 'OK' AS [Status_Bloqueio_Log];
+    END
     PRINT CHAR(10);
 
     -- =====================================================================
@@ -167,25 +233,41 @@ BEGIN
     PRINT CHAR(10);
     
     -- =====================================================================
-    -- 8. LOCKS DE LONGA DURAÇÃO (> 30s) (Databases > 5)
+    -- 8. LOCKS DE LONGA DURAÇÃO (> 3 min) (Databases > 5)
     -- =====================================================================
-    PRINT '--- 8. Locks de Longa Duração (> 30 segundos) ---';
-    PRINT 'INFO: Lista transações abertas há mais de 30 segundos em bancos com database_id > 5.';
-    SELECT '8_Locks_Maiores_30s' AS Ponto_de_Verificacao, s.session_id, DB_NAME(l.resource_database_id) AS database_name,
-        s.login_name, s.host_name, tat.transaction_begin_time, DATEDIFF(SECOND, tat.transaction_begin_time, GETDATE()) AS [DuraçãoTransacao_s],
-        st.text AS sql_text, l.resource_type, l.request_mode, l.request_status
-    FROM sys.dm_tran_locks l
-    JOIN sys.dm_tran_session_transactions st_map ON l.request_owner_id = st_map.transaction_id
-    JOIN sys.dm_tran_active_transactions tat ON st_map.transaction_id = tat.transaction_id
-    JOIN sys.dm_exec_sessions s ON st_map.session_id = s.session_id
-    LEFT JOIN sys.dm_exec_connections c ON s.session_id = c.session_id
-    CROSS APPLY sys.dm_exec_sql_text(c.most_recent_sql_handle) AS st
+    PRINT '--- 8. Locks de Longa Duração (> 3 minutos) ---';
+    PRINT 'INFO: Lista transações abertas há mais de 3 minutos em bancos com database_id > 5.';
+    
+    SELECT DISTINCT
+        '8_Locks_Maiores_3_min' AS Ponto_de_Verificacao,
+        s.session_id,
+        DB_NAME(s.database_id) AS database_name,
+        s.login_name,
+        s.host_name,
+        tat.transaction_begin_time,
+        DATEDIFF(SECOND, tat.transaction_begin_time, GETDATE()) AS [DuraçãoTransacao_s],
+        st.text AS sql_text
+    FROM 
+        sys.dm_tran_active_transactions tat
+    JOIN 
+        sys.dm_tran_session_transactions st_map ON tat.transaction_id = st_map.transaction_id
+    JOIN 
+        sys.dm_exec_sessions s ON st_map.session_id = s.session_id
+    LEFT JOIN 
+        sys.dm_exec_connections c ON s.session_id = c.session_id
+    CROSS APPLY 
+        sys.dm_exec_sql_text(c.most_recent_sql_handle) AS st
     WHERE 
         s.is_user_process = 1 
-        AND DATEDIFF(SECOND, tat.transaction_begin_time, GETDATE()) > 30
-        AND l.resource_database_id > 5 -- AJUSTE: Adicionado filtro
+        AND DATEDIFF(SECOND, tat.transaction_begin_time, GETDATE()) > 180
+        AND s.database_id > 5
     ORDER BY 
         [DuraçãoTransacao_s] DESC;
+
+    IF @@ROWCOUNT = 0
+    BEGIN
+        SELECT '8_Locks_Maiores_3_min' AS Ponto_de_Verificacao, NULL AS session_id, 'Nenhuma transação > 3 min encontrada' AS database_name, NULL AS login_name, NULL AS host_name, NULL AS transaction_begin_time, NULL AS [DuraçãoTransacao_s], NULL AS sql_text;
+    END
     PRINT CHAR(10);
     
     -- =====================================================================
@@ -200,9 +282,15 @@ BEGIN
     WHERE 
         s.is_user_process = 1 
         AND s.login_time < DATEADD(day, -1, GETDATE())
-        AND s.database_id > 5 -- AJUSTE: Adicionado filtro
+        AND s.database_id > 5
+        AND s.login_name <> 'sa'
+        AND s.login_name NOT LIKE '%GodFather%'
     ORDER BY 
         s.login_time ASC;
+    IF @@ROWCOUNT = 0
+    BEGIN
+        SELECT '9_SPIDs_Antigos_Mais_de_1_Dia' AS Ponto_de_Verificacao, NULL AS session_id, 'Nenhuma sessão > 1 dia encontrada' AS login_name, NULL AS host_name, NULL AS program_name, NULL AS login_time, NULL AS HorasAtivo, NULL AS status, NULL AS LastSQLText;
+    END
     PRINT CHAR(10);
 
     -- =====================================================================
@@ -219,9 +307,13 @@ BEGIN
     INNER JOIN sys.master_files AS mf ON fs.database_id = mf.database_id AND fs.file_id = mf.file_id
     WHERE 
         (fs.num_of_reads > 0 OR fs.num_of_writes > 0)
-        AND fs.database_id > 5 -- AJUSTE: Adicionado filtro
+        AND fs.database_id > 5
     ORDER BY 
         [Latência Média Leitura (ms)] DESC, [Latência Média Escrita (ms)] DESC;
+    IF @@ROWCOUNT = 0
+    BEGIN
+        SELECT '10_Latencia_Disco_IO' AS Ponto_de_Verificacao, 'Nenhuma atividade de I/O registrada para BDs (ID > 5)' AS [Database], NULL AS [Arquivo], NULL AS [Total Read Stall (ms)], NULL AS [Total Reads], NULL AS [Latência Média Leitura (ms)], NULL AS [Total Write Stall (ms)], NULL AS [Total Writes], NULL AS [Latência Média Escrita (ms)];
+    END
     PRINT CHAR(10);
 
     PRINT '=====================================================================';
