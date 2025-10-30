@@ -1,7 +1,7 @@
 USE [master]
 GO
 
-/****** Object:  StoredProcedure [dbo].[usp_HealthCheck_Ambiente]    Script Date: 28/10/2025 13:18:34 ******/
+/****** Object:  StoredProcedure [dbo].[usp_HealthCheck_Ambiente]    Script Date: 30/10/2025 14:43:30 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -14,7 +14,7 @@ GO
 * AUTOR: [Tassio/R2D2]
 *
 * DATA DE CRIAÇÃO: 06/10/2025
-* DATA DE ALTERAÇÃO: 23/10/2025 - Corrigida Seção 5 para compatibilidade com versões anteriores do SQL Server.
+* DATA DE ALTERAÇÃO: 29/10/2025 - Adicionado filtro para '%prtsql%' na Seção 9.
 *
 * DESCRIÇÃO DETALHADA:
 * A procedure executa as seguintes validações:
@@ -25,7 +25,7 @@ GO
 * 5. Configurações de Banco de Dados (Compatibilidade, Stats, Cardinalidade, Parametrização)
 * 6. Status Crítico do Log por Replicação/CDC
 * 7. Page Life Expectancy (PLE)
-* 8. Locks de Longa Duração (> 3 min)
+* 8. Cadeias de Bloqueio Ativas (Todos os BDs)
 * 9. SPIDs Antigos (com filtro de exclusão)
 * 10. Latência de Disco
 *
@@ -49,7 +49,7 @@ BEGIN
     -- =====================================================================
     PRINT '--- 1. Latência Real do CDC (em segundos) ---';
     PRINT 'INFO: Mede o tempo de atraso para bancos com database_id > 5.';
-    
+
     IF OBJECT_ID('tempdb..#CDCLatencyReal') IS NOT NULL DROP TABLE #CDCLatencyReal;
     CREATE TABLE #CDCLatencyReal (DatabaseName NVARCHAR(128), LastProcessedTransactionTime DATETIME, LatencySeconds INT);
 
@@ -82,12 +82,12 @@ BEGIN
     END
     DROP TABLE #CDCLatencyReal;
     PRINT CHAR(10);
-    
+
     -- =====================================================================
     -- 2. STATUS DOS JOBS DE MANUTENÇÃO (NÍVEL DE INSTÂNCIA)
     -- =====================================================================
     PRINT '--- 2. Status da última execução dos Jobs de Manutenção ---';
-    
+
     WITH JobHistory AS (
         SELECT
             j.name AS JobName,
@@ -117,7 +117,7 @@ BEGIN
         JobHistory
     WHERE
         RowNum = 1;
-    
+
     IF @@ROWCOUNT = 0
     BEGIN
         SELECT '2_Status_Jobs_Manutencao' AS Ponto_de_Verificacao, 'Nenhum dos jobs foi encontrado ou executado' AS JobName, NULL AS LastRunDateTime, 'N/A' AS RunStatus;
@@ -165,12 +165,12 @@ BEGIN
     -- =====================================================================
     PRINT '--- 5. Configurações de Banco de Dados (para database_id > 5) ---';
     PRINT 'INFO: Verifica configurações a nível de banco que afetam o otimizador de consultas.';
-    
+
     IF OBJECT_ID('tempdb..#DbConfigs') IS NOT NULL DROP TABLE #DbConfigs;
     CREATE TABLE #DbConfigs (
-        [Database] NVARCHAR(128), 
-        [Nivel_Compatibilidade] TINYINT, 
-        [Auto_Create_Stats] BIT, 
+        [Database] NVARCHAR(128),
+        [Nivel_Compatibilidade] TINYINT,
+        [Auto_Create_Stats] BIT,
         [Legacy_Cardinality_On] BIT,
         [Parameterization] NVARCHAR(60)
     );
@@ -179,7 +179,6 @@ BEGIN
     OPEN conf_cursor; FETCH NEXT FROM conf_cursor INTO @db_name_conf;
     WHILE @@FETCH_STATUS = 0
     BEGIN
-        -- CORREÇÃO: Trocado 'parameterization_option_desc' por 'is_parameterization_forced'
         SET @sql_conf = N'USE ' + QUOTENAME(@db_name_conf) + N';
                         INSERT INTO #DbConfigs ([Database], [Nivel_Compatibilidade], [Auto_Create_Stats], [Legacy_Cardinality_On], [Parameterization])
                         SELECT
@@ -198,7 +197,7 @@ BEGIN
         FETCH NEXT FROM conf_cursor INTO @db_name_conf;
     END
     CLOSE conf_cursor; DEALLOCATE conf_cursor;
-    
+
     SELECT '5_Config_Databases' AS Ponto_de_Verificacao, * FROM #DbConfigs ORDER BY [Database];
     IF @@ROWCOUNT = 0
     BEGIN
@@ -206,7 +205,7 @@ BEGIN
     END
     DROP TABLE #DbConfigs;
     PRINT CHAR(10);
-    
+
     -- =====================================================================
     -- 6. STATUS CRÍTICO DO LOG POR REPLICAÇÃO/CDC (Databases > 5)
     -- =====================================================================
@@ -231,45 +230,59 @@ BEGIN
     SELECT '7_Page_Life_Expectancy_PLE' AS Ponto_de_Verificacao, cntr_value AS [PLE_Value_in_Seconds]
     FROM sys.dm_os_performance_counters WHERE object_name LIKE '%Buffer Manager%' AND counter_name = 'Page life expectancy';
     PRINT CHAR(10);
-    
-    -- =====================================================================
-    -- 8. LOCKS DE LONGA DURAÇÃO (> 3 min) (Databases > 5)
-    -- =====================================================================
-    PRINT '--- 8. Locks de Longa Duração (> 3 minutos) ---';
-    PRINT 'INFO: Lista transações abertas há mais de 3 minutos em bancos com database_id > 5.';
-    
-    SELECT DISTINCT
-        '8_Locks_Maiores_3_min' AS Ponto_de_Verificacao,
-        s.session_id,
-        DB_NAME(s.database_id) AS database_name,
-        s.login_name,
-        s.host_name,
-        tat.transaction_begin_time,
-        DATEDIFF(SECOND, tat.transaction_begin_time, GETDATE()) AS [DuraçãoTransacao_s],
-        st.text AS sql_text
-    FROM 
-        sys.dm_tran_active_transactions tat
-    JOIN 
-        sys.dm_tran_session_transactions st_map ON tat.transaction_id = st_map.transaction_id
-    JOIN 
-        sys.dm_exec_sessions s ON st_map.session_id = s.session_id
-    LEFT JOIN 
-        sys.dm_exec_connections c ON s.session_id = c.session_id
-    CROSS APPLY 
-        sys.dm_exec_sql_text(c.most_recent_sql_handle) AS st
-    WHERE 
-        s.is_user_process = 1 
-        AND DATEDIFF(SECOND, tat.transaction_begin_time, GETDATE()) > 180
-        AND s.database_id > 5
-    ORDER BY 
-        [DuraçãoTransacao_s] DESC;
 
-    IF @@ROWCOUNT = 0
+    -- =====================================================================
+    -- 8. CADEIAS DE BLOQUEIO ATIVAS (Todos os BDs)
+    -- =====================================================================
+    PRINT '--- 8. Cadeias de Bloqueio Ativas ---';
+    PRINT 'INFO: Lista sessões bloqueadas e bloqueadoras (se houver).';
+
+    IF EXISTS ( SELECT 1 FROM sys.dm_os_waiting_tasks wt
+                JOIN sys.dm_exec_sessions es_wait ON wt.session_id = es_wait.session_id
+                WHERE wt.session_id > 50 AND es_wait.is_user_process = 1 AND wt.wait_type LIKE 'LCK_M_%')
     BEGIN
-        SELECT '8_Locks_Maiores_3_min' AS Ponto_de_Verificacao, NULL AS session_id, 'Nenhuma transação > 3 min encontrada' AS database_name, NULL AS login_name, NULL AS host_name, NULL AS transaction_begin_time, NULL AS [DuraçãoTransacao_s], NULL AS sql_text;
+        SELECT
+            '8_Bloqueios_Ativos' AS Ponto_de_Verificacao,
+            wt.session_id AS [Waiter_Session_ID],
+            DB_NAME(er_wait.database_id) AS [Waiter_Database],
+            es_wait.login_name AS [Waiter_Login],
+            es_wait.host_name AS [Waiter_Host],
+            wt.wait_duration_ms AS [Waiter_Wait_ms],
+            wt.wait_type AS [Waiter_Wait_Type],
+            (SELECT SUBSTRING(st.text, (er_wait.statement_start_offset/2)+1,
+               ((CASE er_wait.statement_end_offset WHEN -1 THEN DATALENGTH(st.text) ELSE er_wait.statement_end_offset END
+                 - er_wait.statement_start_offset)/2) + 1)) AS [Waiter_SQL],
+            wt.blocking_session_id AS [Blocker_Session_ID],
+            es_block.login_name AS [Blocker_Login],
+            es_block.host_name AS [Blocker_Host],
+            (SELECT SUBSTRING(st_block.text, (er_block.statement_start_offset/2)+1,
+               ((CASE er_block.statement_end_offset WHEN -1 THEN DATALENGTH(st_block.text) ELSE er_block.statement_end_offset END
+                 - er_block.statement_start_offset)/2) + 1)) AS [Blocker_SQL]
+        FROM
+            sys.dm_os_waiting_tasks wt
+        JOIN
+            sys.dm_exec_sessions es_wait ON wt.session_id = es_wait.session_id
+        JOIN
+            sys.dm_exec_requests er_wait ON wt.session_id = er_wait.session_id
+        LEFT JOIN
+            sys.dm_exec_sessions es_block ON wt.blocking_session_id = es_block.session_id
+        LEFT JOIN
+            sys.dm_exec_requests er_block ON wt.blocking_session_id = er_block.session_id
+        CROSS APPLY
+            sys.dm_exec_sql_text(er_wait.sql_handle) AS st
+        OUTER APPLY
+            sys.dm_exec_sql_text(er_block.sql_handle) AS st_block
+        WHERE
+            wt.session_id > 50
+            AND es_wait.is_user_process = 1
+            AND wt.wait_type LIKE 'LCK_M_%';
+    END
+    ELSE
+    BEGIN
+        SELECT '8_Bloqueios_Ativos' AS Ponto_de_Verificacao, NULL AS [Waiter_Session_ID], 'Nenhum bloqueio encontrado' AS [Waiter_Database], NULL AS [Waiter_Login], NULL AS [Waiter_Host], NULL AS [Waiter_Wait_ms], NULL AS [Waiter_Wait_Type], NULL AS [Waiter_SQL], NULL AS [Blocker_Session_ID], NULL AS [Blocker_Login], NULL AS [Blocker_Host], NULL AS [Blocker_SQL];
     END
     PRINT CHAR(10);
-    
+
     -- =====================================================================
     -- 9. SPIDS ANTIGOS (EM EXECUÇÃO HÁ MAIS DE 1 DIA) (Databases > 5)
     -- =====================================================================
@@ -279,13 +292,14 @@ BEGIN
         s.login_time, DATEDIFF(hour, s.login_time, GETDATE()) AS 'HorasAtivo', s.status, st.text AS 'LastSQLText'
     FROM sys.dm_exec_sessions AS s LEFT JOIN sys.dm_exec_connections AS c ON s.session_id = c.session_id
     OUTER APPLY sys.dm_exec_sql_text(c.most_recent_sql_handle) AS st
-    WHERE 
-        s.is_user_process = 1 
+    WHERE
+        s.is_user_process = 1
         AND s.login_time < DATEADD(day, -1, GETDATE())
         AND s.database_id > 5
         AND s.login_name <> 'sa'
         AND s.login_name NOT LIKE '%GodFather%'
-    ORDER BY 
+        AND s.login_name NOT LIKE '%prtsql%' -- AJUSTE: Adicionado filtro
+    ORDER BY
         s.login_time ASC;
     IF @@ROWCOUNT = 0
     BEGIN
@@ -305,10 +319,10 @@ BEGIN
         CAST(fs.io_stall_write_ms / NULLIF(fs.num_of_writes, 0) AS DECIMAL(10, 2)) AS [Latência Média Escrita (ms)]
     FROM sys.dm_io_virtual_file_stats(NULL, NULL) AS fs
     INNER JOIN sys.master_files AS mf ON fs.database_id = mf.database_id AND fs.file_id = mf.file_id
-    WHERE 
+    WHERE
         (fs.num_of_reads > 0 OR fs.num_of_writes > 0)
         AND fs.database_id > 5
-    ORDER BY 
+    ORDER BY
         [Latência Média Leitura (ms)] DESC, [Latência Média Escrita (ms)] DESC;
     IF @@ROWCOUNT = 0
     BEGIN
