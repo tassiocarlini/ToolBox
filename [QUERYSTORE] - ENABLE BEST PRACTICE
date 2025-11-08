@@ -8,7 +8,7 @@ GO
 
 --https://www.sqlskills.com/blogs/erin/query-store-trace-flags/
 
-
-
+-- Query validar status do Query Store
+select * from sys.database_query_store_options
 
 ALTER DATABASE [cdcTest2] SET QUERY_STORE = OFF (FORCED)
