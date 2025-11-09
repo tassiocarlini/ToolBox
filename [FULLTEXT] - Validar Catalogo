@@ -1,0 +1,44 @@
+--% Catálogo
+-- iniciado às 17:12
+-- 17:23 inicio da SBZ
+
+WITH CatalogTotals AS (
+    -- 1. Contar o total de linhas das tabelas que estão no FTS
+    SELECT
+        ftc.name AS CatalogName,
+        SUM(p.rows) AS TotalLinhasNoCatalogo
+    FROM
+        sys.partitions p
+    INNER JOIN
+        sys.fulltext_indexes fti ON p.object_id = fti.object_id  -- Junta partição com o índice FTS
+    INNER JOIN
+        sys.fulltext_catalogs ftc ON fti.fulltext_catalog_id = ftc.fulltext_catalog_id -- Junta índice FTS com o catálogo
+    WHERE
+        p.index_id IN (0, 1) -- 0=Heap, 1=Clustered Index
+    GROUP BY
+        ftc.name
+)
+-- 2. Busca o status atual e calcula o percentual
+SELECT
+    cat.name AS CatalogName,
+    CASE FULLTEXTCATALOGPROPERTY(cat.name, 'PopulateStatus')
+        WHEN 0 THEN '0 - Idle (Completo!)'
+        WHEN 1 THEN '1 - Full population in progress'
+        WHEN 7 THEN '7 - Building index'
+        ELSE 'Status: ' + CAST(FULLTEXTCATALOGPROPERTY(cat.name, 'PopulateStatus') AS VARCHAR(10))
+    END AS PopulateStatus,
+    
+    FULLTEXTCATALOGPROPERTY(cat.name, 'ItemCount') AS ItensProcessados,
+    ISNULL(ct.TotalLinhasNoCatalogo, 0) AS TotalDeLinhas,
+    
+    CASE
+        WHEN ISNULL(ct.TotalLinhasNoCatalogo, 0) = 0 THEN 100.00 -- Se não há linhas, está 100%
+        ELSE CAST(
+                 (CAST(FULLTEXTCATALOGPROPERTY(cat.name, 'ItemCount') AS FLOAT) / 
+                  CAST(ct.TotalLinhasNoCatalogo AS FLOAT)) * 100.0
+             AS DECIMAL(5, 2))
+    END AS PercentualConcluido
+FROM
+    sys.fulltext_catalogs cat
+LEFT JOIN
+    CatalogTotals ct ON cat.name = ct.CatalogName;
