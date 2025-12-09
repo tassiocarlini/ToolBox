@@ -7,3 +7,17 @@ WHERE [text]  LIKE '%SELECT CNAB_CARTEIRA_BANCO.CARTE_IMPRIME FROM CONTA_RECEBE
 
 --Delete Plan
 DBCC FREEPROCCACHE (0x060001006C6C4B2080117CDEDE00000001000000000000000000000000000000000000000000000000000000);
+
+
+
+-- Pegando pelo query_hash, vá em propriedades do plano de execução, final das propriedades tem QUery Hash
+
+SELECT DISTINCT
+    qs.query_hash,
+    qs.query_plan_hash,
+    qs.plan_handle,
+    'DBCC FREEPROCCACHE (' + CONVERT(VARCHAR(128), qs.plan_handle, 1) + ');' AS [Comando_Para_Limpar],
+    st.text as [Query_Text]
+FROM sys.dm_exec_query_stats AS qs
+CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) AS st
+WHERE qs.query_hash = 0x12323123123123  -- QUERY HASH AQUI
