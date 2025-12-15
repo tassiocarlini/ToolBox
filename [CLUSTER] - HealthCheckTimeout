@@ -1,0 +1,9 @@
+Import-Module FailoverClusters
+
+Get-ClusterResource "CRYKXI161238" | Set-ClusterParameter -Name FailureConditionLevel -Value 2
+Get-ClusterResource "CRYKXI161238" | Set-ClusterParameter -Name HealthCheckTimeout     -Value 60000
+Get-ClusterResource "CRYKXI161238" | Set-ClusterParameter -Name LeaseTimeout           -Value 30000
+Get-ClusterResource "CRYKXI161238" | Set-ClusterParameter -Name IsAlivePollInterval    -Value 120000
+Get-ClusterResource "CRYKXI161238" | Set-ClusterParameter -Name LooksAlivePollInterval -Value 10000
+
+(Get-Cluster).SameSubnetThreshold = 3
