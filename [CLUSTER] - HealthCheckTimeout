@@ -1,3 +1,33 @@
+#VALIDA STATUS ATUAL
+Import-Module FailoverClusters;
+Get-ClusterResource | ForEach-Object {
+    $_ | Get-ClusterParameter |
+    Where-Object {
+        $_.Name -in @(
+            "HealthCheckTimeout",
+            "LeaseTimeout",
+            "IsAlivePollInterval",
+            "LooksAlivePollInterval",
+            "FailureConditionLevel"
+        )
+    } |
+    Select-Object @{n="Recurso";e={$_.Owner.Name}},
+                  @{n="Parametro";e={$_.Name}},
+                  @{n="Valor";e={
+                      if ($_.Name -like "*Timeout" -or $_.Name -like "*Interval") {
+                          "$([int]($_.Value/1000))s"
+                      } else {
+                          $_.Value
+                      }
+                  }}
+} |
+Sort-Object Recurso, Parametro;
+"`nSameSubnetThreshold = $((Get-Cluster).SameSubnetThreshold)"
+
+
+
+#ALTERA PARAMETROS
+
 Import-Module FailoverClusters
 
 Get-ClusterResource "CRYKXI161238" | Set-ClusterParameter -Name FailureConditionLevel -Value 2
