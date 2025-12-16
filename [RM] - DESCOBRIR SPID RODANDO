@@ -1,0 +1,2 @@
+select cast (cast (context_info as varbinary(max)) as varchar(max)),* from sys.sysprocesses
+where spid = 3200
