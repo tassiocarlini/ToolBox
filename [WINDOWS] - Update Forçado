@@ -1,0 +1,354 @@
+<#
+    Nome do script: ValidaRollbackWindowsUpdate.ps1
+    SQL Server - Script para ajustar o windows update nos servidores de banco de dados sql server
+    shell: pwsh
+    Criado por: Wesley Almeida Cardoso 21/05/2025 - 01h08m
+    Alterado por: Wesley Almeida Cardoso 27/11/2025 - 11h:09 - add os IP do TESP7 no WSUS
+
+    SQUAD CLOUD SQL SERVER
+
+#>
+try {
+    # Tenta executar o comando 'aws --version'
+    $version = aws --version 2>&1
+
+    # Verifica se o comando 'aws' foi encontrado
+    if ($version) {
+        #Write-Host "AWS CLI esta instalada. Versao: $version"
+    }
+}
+catch {
+    #Write-Host "AWS CLI nao esta instalada. Instalando agora..."
+
+    try {
+        # Baixa e instala o AWS CLI usando Chocolatey
+        choco install -y awscli --force
+
+        # Adiciona o caminho do AWS CLI ao PATH do sistema para a sessao atual
+        $awsPath = "$($env:ProgramFiles)\Amazon\AWSCLIV2"
+        if (-Not ($env:PATH -contains $awsPath)) {
+            $env:PATH += ";$awsPath"
+        }
+
+        # Verifica novamente se a instalacao foi bem-sucedida
+        $version = aws --version 2>&1
+        if ($version) {
+            #Write-Host "AWS CLI foi instalada com sucesso. Versao: $version"
+        }
+    }
+    catch {
+        #Write-Host "Falha na instalacao da AWS CLI."
+    }
+}
+
+# Descobrir o datacenter
+$DATACENTER = $env:CloudEdgeEnv
+
+# Defina os URLs para os links
+$urls = @(
+    "https://hermes-$DATACENTER-node1.cloudtotvs.com.br:9000",
+    "https://hermes-$DATACENTER-node2.cloudtotvs.com.br:9000"
+)
+
+# Funcao para testar a acessibilidade de um URL
+function Test-Url {
+    param (
+        [string]$url
+    )
+    
+    try {
+        # Realiza uma requisicao GET para o URL
+        $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 10
+        if ($response.StatusCode -eq 200) {
+            return $true
+        }
+    }
+    catch {
+        return $false
+    }
+    return $false
+}
+
+# Tenta acessar os URLs na ordem definida
+foreach ($url in $urls) {
+    if (Test-Url -url $url) {
+        #Write-Output "Sucesso ao acessar: $url"
+        break
+    }
+    else {
+        #Write-Output "Falha ao acessar: $url"
+    }
+}
+
+# Executando a criacao do diretorio padrao
+$directoryPath = "C:\SQLSERVER_REPOSITORIO"
+
+# Verifica se o diretorio existe
+if (Test-Path $directoryPath) {
+            
+    # Deleta todos os arquivos e subdiretorios dentro do diretorio
+    Remove-Item -Path "$directoryPath\*" -Recurse -Force
+
+    # Atualizar os arquivos no diretorio 
+    $env:AWS_ACCESS_KEY_ID = "dba-updates"
+    $env:AWS_SECRET_ACCESS_KEY = "9ubrL6s6eDQUzq6G&na7jN32btGKcQPLNVt56kGWhK#"
+    aws s3 cp "s3://dba-updates/windows/SQLServer" $directoryPath --recursive --endpoint-url $url --exclude "CUMULATIVEUPDATE/*" --exclude "CrescimentoVegetativo/*" --exclude "Scripts/*" --no-progress > $null 2>&1
+    
+}
+else {
+    # Cria o diretorio se ele nao existir
+    New-Item -Path $directoryPath -ItemType Directory
+
+    # Atualizar os arquivos no diretorio 
+    $env:AWS_ACCESS_KEY_ID = "dba-updates"
+    $env:AWS_SECRET_ACCESS_KEY = "9ubrL6s6eDQUzq6G&na7jN32btGKcQPLNVt56kGWhK#"
+    aws s3 cp "s3://dba-updates/windows/SQLServer" $directoryPath --recursive --endpoint-url $url --exclude "CUMULATIVEUPDATE/*" --exclude "CrescimentoVegetativo/*" --exclude "Scripts/*" --no-progress > $null 2>&1
+}
+
+
+# Funcao para notify
+
+function Test-RegistryNotifyObject {
+    $registryPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppReadiness"
+    $regCmdPath = "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\AppReadiness" # usado no comando reg add
+    $valueName = "NotifyObject"
+    $expectedData = "{c980e4c2-c178-4572-935d-a8a429884806}"
+    $needsFix = $false
+    $message = ""
+
+    # Verifica se a chave existe
+    if (-not (Test-Path $registryPath)) {
+        $needsFix = $true
+        $message += "A chave de registro nao existe: $registryPath. "
+    } else {
+        try {
+            $value = Get-ItemProperty -Path $registryPath -Name $valueName -ErrorAction Stop | Select-Object -ExpandProperty $valueName
+            if ($value -ne $expectedData) {
+                $needsFix = $true
+                $message += "O valor '$valueName' existe, mas o dado e diferente. Esperado: '$expectedData', Encontrado: '$value'. "
+            } else {
+                return @{
+                    ChaveRegistryNotifyObject = "$valueName"
+                    StatusRegistryNotifyObject = "OK"
+                    MessageRegistryNotifyObject = "A chave, o valor e os dados estao corretos."
+                }
+            }
+        } catch {
+            $needsFix = $true
+            $message += "O valor '$valueName' nao existe na chave '$registryPath'. "
+        }
+    }
+
+    # Executar correcao, se necessario
+    if ($needsFix) {
+        try {
+            $regCommand = "reg add `"$regCmdPath`" /v $valueName /d `"$expectedData`" /t REG_SZ /f"
+            Invoke-Expression $regCommand
+            return @{
+                ChaveRegistryNotifyObject = "$valueName"
+                StatusRegistryNotifyObject = "FIX_APPLIED"
+                MessageRegistryNotifyObject = "FIX Correcao aplicada com sucesso. $message"
+            }
+        } catch {
+            return @{
+                ChaveRegistryNotifyObject = "$valueName"
+                StatusRegistryNotifyObject = "ERROR"
+                MessageRegistryNotifyObject = "Erro ao tentar aplicar a correcao: $_"
+            }
+        }
+    }
+}
+
+
+
+# Funcao para test e fix do servico appreadinessservices
+function Test-AndFix-AppReadinessServiceKey {
+    $registryPath = "HKLM:\SYSTEM\CurrentControlSet\Services\AppReadiness"
+    $regFilePath = "C:\SQLSERVER_REPOSITORIO\AppReadness\APPReadness.reg"  # <-- Altere para o caminho real
+
+    if (Test-Path $registryPath) {
+        return @{
+            ChaveAppReadinessService = "AppReadiness"
+            StatusAppReadinessService = "OK"
+            MessageAppReadinessService = "A chave existe em: $registryPath"
+        }
+    } else {
+        if (Test-Path $regFilePath) {
+            try {
+                Start-Process -FilePath "regedit.exe" -ArgumentList "/s `"$regFilePath`"" -Wait -WindowStyle Hidden
+                return @{
+                    ChaveAppReadinessService = "AppReadiness"
+                    StatusAppReadinessService = "FIX_APPLIED"
+                    MessageAppReadinessService = "A chave nao existia e o arquivo .reg foi importado com sucesso: $regFilePath"
+                }
+            } catch {
+                return @{
+                    ChaveAppReadinessService = "AppReadiness"
+                    StatusAppReadinessService = "ERROR"
+                    MessageAppReadinessService = "Erro ao tentar importar o arquivo .reg: $_"
+                }
+            }
+        } else {
+            return @{
+                ChaveAppReadinessService = "AppReadiness"
+                StatusAppReadinessService = "ERROR"
+                MessageAppReadinessService = "A chave nao existe e o arquivo .reg nao foi encontrado em: $regFilePath"
+            }
+        }
+    }
+}
+
+# Funcao WSUS
+function Test-WUConnectionAndRegistry {
+    [CmdletBinding()]
+    param (
+        [string]$DataCenter = $env:CloudEdgeEnv
+    )
+
+    $result = [PSCustomObject]@{
+        DataCenter   = $DataCenter
+        TargetIP     = $null
+        TargetPort   = $null
+        TcpStatus    = "FAILED"
+        RegistryFix  = $false
+        Message      = ""
+    }
+
+    $targets = @{
+        "TESP6" = @(
+            @{ IP = "10.114.26.31"; PORT = 8530 },
+            @{ IP = "10.14.14.31";  PORT = 8530 }
+        )
+        "TESP5" = @(
+            @{ IP = "10.108.14.31"; PORT = 8530 },
+            @{ IP = "10.108.26.31"; PORT = 8530 }
+        )
+        "TESP3" = @(
+            @{ IP = "10.100.14.31"; PORT = 8530 },
+            @{ IP = "10.100.26.31"; PORT = 8530 }
+        )
+        "TESP2" = @(
+            @{ IP = "172.18.209.19"; PORT = 8530 },
+            @{ IP = "172.18.158.19"; PORT = 8530 }
+        )
+        "TECE1" = @(
+            @{ IP = "172.18.209.19"; PORT = 8530 },
+            @{ IP = "172.18.158.19"; PORT = 8530 }
+        )
+        "TESP7" = @(
+            @{ IP = "10.118.14.31"; PORT = 8530 },
+            @{ IP = "10.118.26.31"; PORT = 8530 }
+        )
+    }
+
+    if ($targets.ContainsKey($DataCenter)) {
+        $targetList = $targets[$DataCenter]
+        $connected = $null
+
+        foreach ($target in $targetList) {
+            $test = Test-NetConnection -ComputerName $target.IP -Port $target.PORT -WarningAction SilentlyContinue
+            if ($test.TcpTestSucceeded) {
+                $connected = $target
+                $result.TargetIP = $target.IP
+                $result.TargetPort = $target.PORT
+                $result.TcpStatus = "OK"
+                $result.Message = "Conexao TCP bem-sucedida com $($target.IP):$($target.PORT)"
+                break
+            }
+        }
+
+        # Se conexao falhou com todos, usar o primeiro para tentar atualizar o registro mesmo assim
+        if (-not $connected) {
+            $target = $targetList[0]
+            $result.TargetIP = $target.IP
+            $result.TargetPort = $target.PORT
+            $result.Message = "Conexao TCP falhou em todos os IPs. Verificando/ajustando registro com IP padrao $($target.IP):$($target.PORT)."
+        }
+
+        # Atualizar registro se necessario
+        $expectedValue = "http://$($result.TargetIP):$($result.TargetPort)"
+        $regPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate"
+        $WUServer = Get-ItemProperty -Path $regPath -Name "WUServer" -ErrorAction SilentlyContinue
+        $WUStatusServer = Get-ItemProperty -Path $regPath -Name "WUStatusServer" -ErrorAction SilentlyContinue
+
+        if ($WUServer -and $WUStatusServer) {
+            $ws = $WUServer.WUServer
+            $wus = $WUStatusServer.WUStatusServer
+
+            if ($ws -ne $expectedValue -or $wus -ne $expectedValue) {
+                Set-ItemProperty -Path $regPath -Name "WUServer" -Value $expectedValue
+                Set-ItemProperty -Path $regPath -Name "WUStatusServer" -Value $expectedValue
+                $result.RegistryFix = $true
+                $result.Message += " | Registro corrigido."
+            }
+        }
+        else {
+            New-Item -Path $regPath -Force | Out-Null
+            New-ItemProperty -Path $regPath -Name "WUServer" -Value $expectedValue -PropertyType String -Force | Out-Null
+            New-ItemProperty -Path $regPath -Name "WUStatusServer" -Value $expectedValue -PropertyType String -Force | Out-Null
+            $result.RegistryFix = $true
+            $result.Message += " | Chaves de registro criadas."
+        }
+    }
+    else {
+        $result.Message = "Datacenter '$DataCenter' nao reconhecido. Nenhuma acao foi executada."
+    }
+
+    return $result
+}
+
+Start-Sleep -Seconds  30
+
+
+# Executar
+#$resultado = Test-RegistryNotifyObject
+#$resultado | ConvertTo-Json -Depth 3
+
+# Executar
+#$resultado = Test-AndFix-AppReadinessServiceKey
+#$resultado | ConvertTo-Json -Depth 3
+
+# Executar as funcoes
+# Executa a primeira funcao e renomeia as chaves
+
+$regResult = Test-RegistryNotifyObject
+$regRenamed = @{
+    MessageRegistryNotifyObject = $regResult.MessageRegistryNotifyObject
+    ChaveRegistryNotifyObject   = $regResult.ChaveRegistryNotifyObject
+    StatusRegistryNotifyObject  = $regResult.StatusRegistryNotifyObject
+}
+
+# Executa a segunda funcao
+$appResult = Test-AndFix-AppReadinessServiceKey
+
+# Executa a funcao WSUS
+$WSUS = Test-WUConnectionAndRegistry
+#$a | ConvertTo-Json -Depth 3
+
+
+# Junta os dois resultados em um único objeto
+$finalResult = [PSCustomObject]@{
+    MessageRegistryNotifyObject                    = $regRenamed.MessageRegistryNotifyObject
+    ChaveRegistryNotifyObject                      = $regRenamed.ChaveRegistryNotifyObject
+    StatusRegistryNotifyObject                     = $regRenamed.StatusRegistryNotifyObject
+    StatusAppReadinessService                      = $appResult.StatusAppReadinessService
+    MessageAppReadinessService                     = $appResult.MessageAppReadinessService
+    ChaveAppReadinessService                       = $appResult.ChaveAppReadinessService
+    DatanceterWSUS                                 = $WSUS.DataCenter
+    TargetIPWSUS                                   = $WSUS.TargetIP
+    TargetPortWSUS                                 = $WSUS.TargetPort
+    TcpStatusWSUS                                  = $WSUS.TcpStatus
+    RegistryFixWSUS                                = $WSUS.RegistryFix
+    MessageWSUS                                    = $WSUS.Message
+
+}
+
+# Converte para JSON e imprime no console
+$output = @($finalResult) | ConvertTo-Json -Depth 3
+Write-Output $output
+
+# Aguarda um tempo antes de reiniciar
+Start-Sleep -Seconds 30
+
+# Executa o reboot forcado após 30 segundos
+Start-Process cmd -ArgumentList "/c shutdown -r -f -t 30" -WindowStyle Hidden -Wait
