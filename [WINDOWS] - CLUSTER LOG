@@ -1,0 +1,89 @@
+# Nome do cluster (ou deixe em branco para pegar o local) 
+
+$ClusterName = "" 
+
+  
+
+try { 
+
+    if ([string]::IsNullOrWhiteSpace($ClusterName)) { 
+
+        $ClusterName = (Get-Cluster).Name 
+
+    } 
+
+  
+
+    Write-Host "=== Verificando Cluster: $ClusterName ===" -ForegroundColor Cyan 
+
+  
+
+    # Status geral do cluster 
+
+    $cluster = Get-Cluster -Name $ClusterName 
+
+    Write-Host "Cluster State: $($cluster.State)" 
+
+    Write-Host "Quorum Configurado: $($cluster.QuorumArbitrationTimeMax)" 
+
+    Write-Host "" 
+
+  
+
+    # Nós do cluster 
+
+    Write-Host "=== Nós do Cluster ===" -ForegroundColor Yellow 
+
+    Get-ClusterNode -Cluster $ClusterName | Select-Object NodeName, State | Format-Table 
+
+  
+
+    # Recursos do cluster 
+
+    Write-Host "`n=== Recursos do Cluster ===" -ForegroundColor Yellow 
+
+    Get-ClusterResource -Cluster $ClusterName | Select-Object Name, State, OwnerGroup | Format-Table 
+
+  
+
+    # Grupos de recursos 
+
+    Write-Host "`n=== Grupos de Recursos ===" -ForegroundColor Yellow 
+
+    Get-ClusterGroup -Cluster $ClusterName | Select-Object Name, State, OwnerNode | Format-Table 
+
+  
+
+    # Discos do cluster 
+
+    Write-Host "`n=== Discos do Cluster ===" -ForegroundColor Yellow 
+
+    Get-ClusterResource -Cluster $ClusterName | Where-Object {$_.ResourceType -eq "Physical Disk"} | 
+
+        Get-ClusterParameter | Format-Table Object, Name, Value 
+
+  
+
+    # Redes do cluster 
+
+    Write-Host "`n=== Redes do Cluster ===" -ForegroundColor Yellow 
+
+    Get-ClusterNetwork -Cluster $ClusterName | Select-Object Name, Address, Role, State | Format-Table 
+
+  
+
+    # Eventos recentes relacionados ao cluster (últimas 50 entradas) 
+
+    Write-Host "`n=== Eventos Recentes do Cluster (50 últimos) ===" -ForegroundColor Yellow 
+
+    Get-WinEvent -LogName "Microsoft-Windows-FailoverClustering/Operational" -MaxEvents 50 | 
+
+        Select-Object TimeCreated, Id, LevelDisplayName, Message | Format-Table -Wrap -AutoSize 
+
+  
+
+} catch { 
+
+    Write-Host "Erro ao acessar o cluster: $_" -ForegroundColor Red 
+
+} 
