@@ -3,8 +3,8 @@
 Cluster Detectado: CDBAAS177985
 Iniciando verificação e aplicação de configurações...
 
-  [INFO] Parâmetro 'IsAlivePollInterval' não existe no recurso
-  [INFO] Parâmetro 'LooksAlivePollInterval' não existe no recurso
+  [INFO] Parâmetro 'IsAlivePollInterval' não existe no recurso - Adicionado a HealthCheckTimeout versões mais recente do windows
+  [INFO] Parâmetro 'LooksAlivePollInterval' não existe no recurso - Adicionado a HealthCheckTimeout versões mais recente do windows
 
 Aplicando novas configurações...
   [OK] FailureConditionLevel aplicado
