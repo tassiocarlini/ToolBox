@@ -1,9 +1,41 @@
+<# EXEMPLO DO OUTPUT ESPERADO:
+
+Cluster Detectado: CDBAAS177985
+Iniciando verificação e aplicação de configurações...
+
+  [INFO] Parâmetro 'IsAlivePollInterval' não existe no recurso
+  [INFO] Parâmetro 'LooksAlivePollInterval' não existe no recurso
+
+Aplicando novas configurações...
+  [OK] FailureConditionLevel aplicado
+  [OK] HealthCheckTimeout aplicado
+  [OK] LeaseTimeout aplicado
+  [AVISO] IsAlivePollInterval não existe ou não pode ser alterado
+  [AVISO] LooksAlivePollInterval não existe ou não pode ser alterado
+  [OK] SameSubnetThreshold aplicado
+  [INFO] Parâmetro 'IsAlivePollInterval' não existe no recurso
+  [INFO] Parâmetro 'LooksAlivePollInterval' não existe no recurso
+
+=== RELATÓRIO FINAL: ANTES x DEPOIS ===
+PARAMETRO                 | ANTES      | DEPOIS     | STATUS
+-----------------------------------------------------------------
+FailureConditionLevel     | 3          | 2          | ALTERADO
+HealthCheckTimeout        | 90s        | 60s        | ALTERADO
+LeaseTimeout              | 90s        | 30s        | ALTERADO
+IsAlivePollInterval       | N/A        | N/A        | NÃO EXISTE
+LooksAlivePollInterval    | N/A        | N/A        | NÃO EXISTE
+SameSubnetThreshold       | 20         | 20         | MANTIDO
+-----------------------------------------------------------------
+#>
+
 Import-Module FailoverClusters
 
 # 1. Definição Automática do Nome do Recurso (Nome do Cluster)
-$NomeRecurso = "CUI82W149560"
+$name = Get-ClusterResource | Where-Object {$_.ResourceType -eq "SQL Server Availability Group"} | Select-Object -ExpandProperty Name
+$NomeRecurso = $name
 Write-Host "Cluster Detectado: $NomeRecurso" -ForegroundColor Cyan
 Write-Host "Iniciando verificação e aplicação de configurações...`n" -ForegroundColor Gray
+
 $ParametrosMonitorados = @(
     "FailureConditionLevel", 
     "HealthCheckTimeout", 
@@ -20,18 +52,31 @@ function Obter-ValoresAtuais {
     $objRecurso = Get-ClusterResource $NomeRecurso -ErrorAction SilentlyContinue
     if ($objRecurso) {
         foreach ($p in $ParametrosMonitorados) {
-            $raw = ($objRecurso | Get-ClusterParameter $p).Value
-            # Formata se for tempo (ms -> s)
-            if ($p -like "*Timeout" -or $p -like "*Interval") {
-                $Dados[$p] = "$([int]($raw/1000))s"
-            } else {
-                $Dados[$p] = $raw
+            try {
+                $raw = ($objRecurso | Get-ClusterParameter $p -ErrorAction Stop).Value
+                # Formata se for tempo (ms -> s)
+                if ($p -like "*Timeout" -or $p -like "*Interval") {
+                    $Dados[$p] = "$([int]($raw/1000))s"
+                } else {
+                    $Dados[$p] = $raw
+                }
+            }
+            catch {
+                # Parâmetro não existe - registra como N/A
+                $Dados[$p] = "N/A"
+                Write-Host "  [INFO] Parâmetro '$p' não existe no recurso" -ForegroundColor DarkYellow
             }
         }
     }
-
+    
     # Pega parametro Global
-    $Dados["SameSubnetThreshold"] = (Get-Cluster).SameSubnetThreshold
+    try {
+        $Dados["SameSubnetThreshold"] = (Get-Cluster).SameSubnetThreshold
+    }
+    catch {
+        $Dados["SameSubnetThreshold"] = "N/A"
+        Write-Host "  [INFO] Parâmetro 'SameSubnetThreshold' não existe no cluster" -ForegroundColor DarkYellow
+    }
     
     return $Dados
 }
@@ -39,30 +84,83 @@ function Obter-ValoresAtuais {
 # --- PASSO 1: SNAPSHOT "ANTES" ---
 $EstadoAntes = Obter-ValoresAtuais
 
-
 # --- PASSO 2: APLICAR ALTERAÇÕES ---
-Write-Host "Aplicando novas configurações..." -ForegroundColor Yellow
+Write-Host "`nAplicando novas configurações..." -ForegroundColor Yellow
 
+# FailureConditionLevel
 try {
-    Get-ClusterResource $NomeRecurso | Set-ClusterParameter -Name FailureConditionLevel -Value 2
-    Get-ClusterResource $NomeRecurso | Set-ClusterParameter -Name HealthCheckTimeout    -Value 60000
-    Get-ClusterResource $NomeRecurso | Set-ClusterParameter -Name LeaseTimeout          -Value 30000
-    Get-ClusterResource $NomeRecurso | Set-ClusterParameter -Name IsAlivePollInterval   -Value 120000
-    Get-ClusterResource $NomeRecurso | Set-ClusterParameter -Name LooksAlivePollInterval -Value 10000
-    (Get-Cluster).SameSubnetThreshold = 20
+    Get-ClusterResource $NomeRecurso | Set-ClusterParameter -Name FailureConditionLevel -Value 2 -ErrorAction Stop
+    Write-Host "  [OK] FailureConditionLevel aplicado" -ForegroundColor Green
 }
 catch {
-    Write-Error "Erro ao aplicar configurações: $_"
+    Write-Host "  [AVISO] FailureConditionLevel não existe ou não pode ser alterado" -ForegroundColor DarkYellow
+}
+
+# HealthCheckTimeout
+try {
+    Get-ClusterResource $NomeRecurso | Set-ClusterParameter -Name HealthCheckTimeout -Value 60000 -ErrorAction Stop
+    Write-Host "  [OK] HealthCheckTimeout aplicado" -ForegroundColor Green
+}
+catch {
+    Write-Host "  [AVISO] HealthCheckTimeout não existe ou não pode ser alterado" -ForegroundColor DarkYellow
+}
+
+# LeaseTimeout
+try {
+    Get-ClusterResource $NomeRecurso | Set-ClusterParameter -Name LeaseTimeout -Value 30000 -ErrorAction Stop
+    Write-Host "  [OK] LeaseTimeout aplicado" -ForegroundColor Green
+}
+catch {
+    Write-Host "  [AVISO] LeaseTimeout não existe ou não pode ser alterado" -ForegroundColor DarkYellow
+}
+
+# IsAlivePollInterval
+try {
+    $ErrorActionPreference = 'Stop'
+    $WarningPreference = 'SilentlyContinue'
+    Get-ClusterResource $NomeRecurso -ErrorAction Stop | Set-ClusterParameter -Name IsAlivePollInterval -Value 120000 -ErrorAction Stop -WarningAction SilentlyContinue
+    Write-Host "  [OK] IsAlivePollInterval aplicado" -ForegroundColor Green
+}
+catch {
+    Write-Host "  [AVISO] IsAlivePollInterval não existe ou não pode ser alterado" -ForegroundColor DarkYellow
+}
+finally {
+    $ErrorActionPreference = 'Continue'
+    $WarningPreference = 'Continue'
+}
+
+# LooksAlivePollInterval
+try {
+    $ErrorActionPreference = 'Stop'
+    $WarningPreference = 'SilentlyContinue'
+    Get-ClusterResource $NomeRecurso -ErrorAction Stop | Set-ClusterParameter -Name LooksAlivePollInterval -Value 10000 -ErrorAction Stop -WarningAction SilentlyContinue
+    Write-Host "  [OK] LooksAlivePollInterval aplicado" -ForegroundColor Green
+}
+catch {
+    Write-Host "  [AVISO] LooksAlivePollInterval não existe ou não pode ser alterado" -ForegroundColor DarkYellow
+}
+finally {
+    $ErrorActionPreference = 'Continue'
+    $WarningPreference = 'Continue'
+}
+
+# SameSubnetThreshold (Global)
+try {
+    (Get-Cluster).SameSubnetThreshold = 20
+    Write-Host "  [OK] SameSubnetThreshold aplicado" -ForegroundColor Green
+}
+catch {
+    Write-Host "  [AVISO] SameSubnetThreshold não existe ou não pode ser alterado" -ForegroundColor DarkYellow
 }
 
 # Pequena pausa para garantir que o cluster processou (opcional, mas recomendado)
 Start-Sleep -Milliseconds 500 
 
-
 # --- PASSO 3: SNAPSHOT "DEPOIS" E RELATÓRIO ---
 $EstadoDepois = Obter-ValoresAtuais
 
 Write-Host "`n=== RELATÓRIO FINAL: ANTES x DEPOIS ===" -ForegroundColor White
+
 # Cabeçalho da Tabela
 Write-Host ("{0,-25} | {1,-10} | {2,-10} | {3}" -f "PARAMETRO", "ANTES", "DEPOIS", "STATUS") -ForegroundColor Gray
 Write-Host ("-" * 65) -ForegroundColor Gray
@@ -74,15 +172,22 @@ foreach ($Chave in $TodasChaves) {
     $vAntes  = $EstadoAntes[$Chave]
     $vDepois = $EstadoDepois[$Chave]
     
-    if ($vAntes -ne $vDepois) {
+    # Trata casos onde parâmetro não existe
+    if ($vAntes -eq "N/A" -and $vDepois -eq "N/A") {
+        $Status = "NÃO EXISTE"
+        $Cor = "DarkYellow"
+    }
+    elseif ($vAntes -ne $vDepois) {
         $Status = "ALTERADO"
         $Cor = "Green" # Verde para o que mudou
-    } else {
+    }
+    else {
         $Status = "MANTIDO"
         $Cor = "DarkGray" # Cinza escuro para o que já estava igual
     }
-
+    
     # Impressão da linha formatada
     Write-Host ("{0,-25} | {1,-10} | {2,-10} | {3}" -f $Chave, $vAntes, $vDepois, $Status) -ForegroundColor $Cor
 }
+
 Write-Host ("-" * 65) -ForegroundColor Gray
