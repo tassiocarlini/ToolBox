@@ -1,34 +1,88 @@
-Import-Module FailoverClusters;
-Get-ClusterResource | ForEach-Object {
-    $_ | Get-ClusterParameter |
-    Where-Object {
-        $_.Name -in @(
-            "HealthCheckTimeout",
-            "LeaseTimeout",
-            "IsAlivePollInterval",
-            "LooksAlivePollInterval",
-            "FailureConditionLevel"
-        )
-    } |
-    Select-Object @{n="Recurso";e={$_.Owner.Name}},
-                  @{n="Parametro";e={$_.Name}},
-                  @{n="Valor";e={
-                      if ($_.Name -like "*Timeout" -or $_.Name -like "*Interval") {
-                          "$([int]($_.Value/1000))s"
-                      } else {
-                          $_.Value
-                      }
-                  }}
-} |
-Sort-Object Recurso, Parametro;
-"`nSameSubnetThreshold = $((Get-Cluster).SameSubnetThreshold)"
-
-
 Import-Module FailoverClusters
 
-Get-ClusterResource "CRYKXI161238" | Set-ClusterParameter -Name FailureConditionLevel -Value 2
-Get-ClusterResource "CRYKXI161238" | Set-ClusterParameter -Name HealthCheckTimeout     -Value 60000
-Get-ClusterResource "CRYKXI161238" | Set-ClusterParameter -Name LeaseTimeout           -Value 30000
-Get-ClusterResource "CRYKXI161238" | Set-ClusterParameter -Name IsAlivePollInterval    -Value 120000
-Get-ClusterResource "CRYKXI161238" | Set-ClusterParameter -Name LooksAlivePollInterval -Value 10000
-(Get-Cluster).SameSubnetThreshold = 20
+# 1. Definição Automática do Nome do Recurso (Nome do Cluster)
+$NomeRecurso = "CUI82W149560"
+Write-Host "Cluster Detectado: $NomeRecurso" -ForegroundColor Cyan
+Write-Host "Iniciando verificação e aplicação de configurações...`n" -ForegroundColor Gray
+$ParametrosMonitorados = @(
+    "FailureConditionLevel", 
+    "HealthCheckTimeout", 
+    "LeaseTimeout", 
+    "IsAlivePollInterval", 
+    "LooksAlivePollInterval"
+)
+
+# --- FUNÇÃO AUXILIAR PARA LER VALORES ---
+function Obter-ValoresAtuais {
+    $Dados = @{}
+    
+    # Pega parametros do Recurso
+    $objRecurso = Get-ClusterResource $NomeRecurso -ErrorAction SilentlyContinue
+    if ($objRecurso) {
+        foreach ($p in $ParametrosMonitorados) {
+            $raw = ($objRecurso | Get-ClusterParameter $p).Value
+            # Formata se for tempo (ms -> s)
+            if ($p -like "*Timeout" -or $p -like "*Interval") {
+                $Dados[$p] = "$([int]($raw/1000))s"
+            } else {
+                $Dados[$p] = $raw
+            }
+        }
+    }
+
+    # Pega parametro Global
+    $Dados["SameSubnetThreshold"] = (Get-Cluster).SameSubnetThreshold
+    
+    return $Dados
+}
+
+# --- PASSO 1: SNAPSHOT "ANTES" ---
+$EstadoAntes = Obter-ValoresAtuais
+
+
+# --- PASSO 2: APLICAR ALTERAÇÕES ---
+Write-Host "Aplicando novas configurações..." -ForegroundColor Yellow
+
+try {
+    Get-ClusterResource $NomeRecurso | Set-ClusterParameter -Name FailureConditionLevel -Value 2
+    Get-ClusterResource $NomeRecurso | Set-ClusterParameter -Name HealthCheckTimeout    -Value 60000
+    Get-ClusterResource $NomeRecurso | Set-ClusterParameter -Name LeaseTimeout          -Value 30000
+    Get-ClusterResource $NomeRecurso | Set-ClusterParameter -Name IsAlivePollInterval   -Value 120000
+    Get-ClusterResource $NomeRecurso | Set-ClusterParameter -Name LooksAlivePollInterval -Value 10000
+    (Get-Cluster).SameSubnetThreshold = 20
+}
+catch {
+    Write-Error "Erro ao aplicar configurações: $_"
+}
+
+# Pequena pausa para garantir que o cluster processou (opcional, mas recomendado)
+Start-Sleep -Milliseconds 500 
+
+
+# --- PASSO 3: SNAPSHOT "DEPOIS" E RELATÓRIO ---
+$EstadoDepois = Obter-ValoresAtuais
+
+Write-Host "`n=== RELATÓRIO FINAL: ANTES x DEPOIS ===" -ForegroundColor White
+# Cabeçalho da Tabela
+Write-Host ("{0,-25} | {1,-10} | {2,-10} | {3}" -f "PARAMETRO", "ANTES", "DEPOIS", "STATUS") -ForegroundColor Gray
+Write-Host ("-" * 65) -ForegroundColor Gray
+
+# Lista combinada de chaves para iterar
+$TodasChaves = $ParametrosMonitorados + "SameSubnetThreshold"
+
+foreach ($Chave in $TodasChaves) {
+    $vAntes  = $EstadoAntes[$Chave]
+    $vDepois = $EstadoDepois[$Chave]
+    
+    if ($vAntes -ne $vDepois) {
+        $Status = "ALTERADO"
+        $Cor = "Green" # Verde para o que mudou
+    } else {
+        $Status = "MANTIDO"
+        $Cor = "DarkGray" # Cinza escuro para o que já estava igual
+    }
+
+    # Impressão da linha formatada
+    Write-Host ("{0,-25} | {1,-10} | {2,-10} | {3}" -f $Chave, $vAntes, $vDepois, $Status) -ForegroundColor $Cor
+}
+Write-Host ("-" * 65) -ForegroundColor Gray
