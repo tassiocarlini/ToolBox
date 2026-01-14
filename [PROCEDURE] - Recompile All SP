@@ -1,3 +1,26 @@
+/*
+-- alterar em WHERE [type] IN ('P')
+AF = Aggregate function (CLR)
+C = Check constraint
+D = Default (constraint or stand-alone)
+F = Foreign key constraint
+FN = SQL scalar function
+FS = Assembly (CLR) scalar-function
+FT = Assembly (CLR) table-valued function
+IF = SQL inline table-valued function (TVF)
+IT = Internal table
+P = SQL stored procedure
+PC = Assembly (CLR) stored-procedure
+PG = Plan guide
+PK = Primary key constraint
+R = Rule (old-style, stand-alone)
+RF = Replication-filter-procedure
+S = System base table
+SN = Synonym
+SO = Sequence object
+U = Table (user-defined)
+V = View
+*/
 DECLARE C CURSOR FOR (SELECT [name] FROM sys.objects WHERE [type] IN ('P'));
 DECLARE @name SYSNAME;
 OPEN C;
