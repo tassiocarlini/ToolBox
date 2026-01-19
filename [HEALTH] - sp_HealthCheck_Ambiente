@@ -1,7 +1,7 @@
 USE [master]
 GO
 
-/****** Object:  StoredProcedure [dbo].[usp_HealthCheck_Ambiente]    Script Date: 30/10/2025 14:43:30 ******/
+/****** Object:  StoredProcedure [dbo].[sp_HealthCheck_Ambiente]    Script Date: 30/10/2025 14:43:30 ******/
 SET ANSI_NULLS ON
 GO
 
@@ -33,7 +33,7 @@ GO
 * EXEC dbo.usp_HealthCheck_Ambiente;
 *
 **********************************************************************************************************************/
-CREATE   PROCEDURE [dbo].[usp_HealthCheck_Ambiente]
+CREATE   PROCEDURE [dbo].[sp_HealthCheck_Ambiente]
 AS
 BEGIN
     SET NOCOUNT ON;
