@@ -1,0 +1,15 @@
+For a Windows virtual machine:
+From the command line of your Windows virtual machine, run this command:
+
+REG ADD HKLM\SYSTEM\CurrentControlSet\services\pvscsi\Parameters\Device /v DriverParameter /t REG_SZ /d "RequestRingPages=32,MaxQueueDepth=254"
+
+Reboot the virtual machine
+
+To verify the successful creation of registry entry:
+
+Open the registry editor by running the REGEDIT command from the command line.
+Browse to HKLM\ SYSTEM\CurrentControlSet\services\pvscsi\Parameters\Device.
+Verify that the DriverParameter key exists with a value of RequestRingPages=32, MaxQueueDepth=254.
+
+https://knowledge.broadcom.com/external/article?legacyId=2053145
+https://www.vmware.com/docs/sql-server-on-vmware-best-practices-guide
