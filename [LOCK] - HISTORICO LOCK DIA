@@ -1,0 +1,31 @@
+/*
+Alterar data no filtro 
+*/
+SELECT  
+    Dt_Log,
+    [dd hh:mm:ss.mss], 
+    session_id,
+    blocking_session_id,
+    wait_info, 
+    login_name,
+    status,
+    CAST([sql_text] AS NVARCHAR(MAX)) AS [sql_text_text]  
+FROM [Log_Whoisactive] a
+WHERE Dt_Log >= '2026-02-19 00:00:01' AND Dt_Log <= '2026-02-19 23:59:59' -- dia que você quer ver
+AND (
+    -- 1. Retorna quem está SOFRENDO o lock (Vítimas)
+    wait_info LIKE '%LCK%' 
+    OR blocking_session_id IS NOT NULL
+    
+    -- 2. Retorna quem está CAUSANDO o lock (Blockers)
+    OR EXISTS (
+        SELECT 1 
+        FROM [Log_Whoisactive] b
+        -- Garante que é no mesmo exato snapshot/segundo
+        WHERE b.Dt_Log = a.Dt_Log 
+          -- Verifica se a sessão atual (a) está bloqueando a sessão (b)
+          AND b.blocking_session_id = a.session_id
+    )
+)
+-- Ordenar por Dt_Log mantém causador e vítima juntos na leitura
+ORDER BY Dt_Log ASC, blocking_session_id DESC;
