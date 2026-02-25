@@ -1,0 +1,13 @@
+SELECT 
+    total_physical_memory_kb / 1024 AS [RAM Total (MB)],
+    available_physical_memory_kb / 1024 AS [RAM Disponível (MB)],
+    system_memory_state_desc AS [Status da Memória do SO]
+FROM 
+    sys.dm_os_sys_memory;
+
+SELECT 
+    physical_memory_in_use_kb / 1024 AS [Memória em Uso pelo SQL (MB)],
+    process_physical_memory_low AS [Processo com Pouca Memória?],
+    memory_utilization_percentage AS [Utilização de Memória (%)]
+FROM 
+    sys.dm_os_process_memory;
