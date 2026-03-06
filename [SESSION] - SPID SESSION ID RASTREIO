@@ -1,0 +1,17 @@
+SELECT 
+    s.session_id,
+    s.status AS session_status,
+    r.status AS request_status,
+    r.command,
+    r.wait_type,
+    r.total_elapsed_time,
+    st.text AS query_text,
+    qp.query_plan,
+    c.last_read,
+    c.last_write
+FROM sys.dm_exec_sessions AS s
+LEFT JOIN sys.dm_exec_requests AS r ON s.session_id = r.session_id
+LEFT JOIN sys.dm_exec_connections AS c ON s.session_id = c.session_id
+OUTER APPLY sys.dm_exec_sql_text(COALESCE(r.sql_handle, c.most_recent_sql_handle)) AS st
+OUTER APPLY sys.dm_exec_query_plan(r.plan_handle) AS qp
+WHERE s.session_id IN (5131, 5248);
