@@ -1,0 +1,33 @@
+SELECT TOP (1000) 
+    [RowNumber],
+    [EventClass],
+    [TextData],
+    [Duration] AS [Duration_Microseconds], 
+    ([Duration] / 1000.0) AS [Duration_MS], 
+    ([Duration] / 1000000.0) AS [Duration_Seconds], 
+    [SPID],
+    [DatabaseName],
+    [LoginName]
+FROM [_DBACloudControle].[dbo].[trace_1_13032026]
+ORDER BY [Duration] DESC;
+
+
+
+SELECT TOP 200
+    CAST([TextData] AS NVARCHAR(MAX)) AS [QueryText],
+    COUNT(*) AS [Total_Execucoes],
+    
+    -- Médias (Performance por execução)
+    AVG([Duration] / 1000.0) AS [Avg_Duration_MS],
+    
+    -- Totais (Impacto acumulado no servidor)
+    SUM([Duration] / 1000.0) AS [Total_Duration_MS],
+    SUM([Duration] / 1000000.0) AS [Total_Duration_Sec]
+    
+    -- Recursos adicionais para análise
+
+FROM [_DBACloudControle].[dbo].[trace_1_13032026]
+WHERE [TextData] IS NOT NULL 
+  AND [EventClass] IN (10, 12, 41, 43) -- RPC:Completed e SQL:BatchCompleted
+GROUP BY CAST([TextData] AS NVARCHAR(MAX))
+ORDER BY [Total_Execucoes] DESC;
