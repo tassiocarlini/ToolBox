@@ -1,3 +1,4 @@
+/*Autor: Wesley Cardoso*/
 DECLARE
   @PhysicalMemory_MB INT,
   @MinServerMemory SMALLINT = 2048, -- MinMemory configurada (novo)
