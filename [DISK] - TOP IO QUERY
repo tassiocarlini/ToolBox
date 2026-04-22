@@ -1,0 +1,18 @@
+SELECT TOP 10
+    SUBSTRING(st.text, (qs.statement_start_offset/2) + 1,
+    ((CASE statement_end_offset
+        WHEN -1 THEN DATALENGTH(st.text)
+        ELSE qs.statement_end_offset END
+            - qs.statement_start_offset)/2) + 1) AS [Query Text],
+    qs.execution_count [Execuções],
+    (qs.total_physical_reads + qs.total_logical_writes) [Total I/O Físico],
+    (qs.total_physical_reads + qs.total_logical_writes) / qs.execution_count [Média I/O Físico],
+    qs.total_logical_reads [Leituras Lógicas (Cache)],
+    qs.total_logical_writes [Escritas Lógicas],
+    qs.total_worker_time / 1000 [CPU total (ms)],
+    qs.total_elapsed_time / 1000 [Tempo Total (ms)],
+    qp.query_plan [Plano de Execução]
+FROM sys.dm_exec_query_stats AS qs
+CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) AS st
+CROSS APPLY sys.dm_exec_query_plan(qs.plan_handle) AS qp
+ORDER BY [Total I/O Físico] DESC;
