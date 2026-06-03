@@ -1,3 +1,111 @@
+<#
+Validação Parâmetros
+#>
+Import-Module FailoverClusters
+
+# 1. Definição Automática do Nome do Recurso (Nome do Cluster)
+$name = Get-ClusterResource | Where-Object {$_.ResourceType -eq "SQL Server Availability Group"} | Select-Object -ExpandProperty Name
+$NomeRecurso = $name
+
+if (-not $NomeRecurso) {
+    Write-Host "[-] Erro: Nenhuma Availability Group (AG) detectada neste nó do servidor." -ForegroundColor Red
+    return
+}
+
+Clear-Host
+Write-Host "==============================================================" -ForegroundColor Cyan
+Write-Host "         AUDITORIA: STATUS ATUAL DOS PARÂMETROS DO AG         " -ForegroundColor Cyan
+Write-Host "==============================================================" -ForegroundColor Cyan
+Write-Host "Cluster Detectado: $NomeRecurso" -ForegroundColor Green
+Write-Host ""
+
+# Lista de parâmetros monitorados
+$ParametrosRecurso = @(
+    "FailureConditionLevel", 
+    "HealthCheckTimeout", 
+    "LeaseTimeout", 
+    "IsAlivePollInterval", 
+    "LooksAlivePollInterval"
+)
+
+$ParametrosClusterGlobal = @(
+    "SameSubnetThreshold",
+    "SameSubnetDelay",
+    "CrossSubnetThreshold",
+    "CrossSubnetDelay"
+)
+
+# --- CAPTURA DOS VALORES ATUAIS ---
+$DadosStatus = @{}
+
+# Lendo parâmetros do Recurso (AG)
+$objRecurso = Get-ClusterResource $NomeRecurso -ErrorAction SilentlyContinue
+if ($objRecurso) {
+    foreach ($p in $ParametrosRecurso) {
+        try {
+            $raw = ($objRecurso | Get-ClusterParameter $p -ErrorAction Stop).Value
+            if ($p -like "*Timeout" -or $p -like "*Interval") {
+                $DadosStatus[$p] = "$([int]($raw/1000))s"
+            } else {
+                $DadosStatus[$p] = $raw
+            }
+        }
+        catch {
+            $DadosStatus[$p] = "N/A"
+        }
+    }
+}
+
+# Lendo parâmetros Globais do Cluster
+foreach ($cg in $ParametrosClusterGlobal) {
+    try {
+        $rawGlobal = (Get-Cluster).$cg
+        if ($cg -like "*Delay") {
+            $DadosStatus[$cg] = "$([int]($rawGlobal/1000))s"
+        } else {
+            $DadosStatus[$cg] = $rawGlobal
+        }
+    }
+    catch {
+        $DadosStatus[$cg] = "N/A"
+    }
+}
+
+# --- EXIBIÇÃO DO RELATÓRIO ATUAL ---
+Write-Host "=== CONFIGURAÇÃO ATIVA NO AMBIENTE ===" -ForegroundColor White
+
+# Cabeçalho da Tabela
+Write-Host ("{0,-27} | {1,-12} | {2}" -f "PARAMETRO", "VALOR ATUAL", "STATUS") -ForegroundColor Gray
+Write-Host ("-" * 55) -ForegroundColor Gray
+
+# União de todas as chaves para exibição sequencial
+$TodasChaves = $ParametrosRecurso + $ParametrosClusterGlobal
+
+foreach ($Chave in $TodasChaves) {
+    $Valor = $DadosStatus[$Chave]
+    
+    # Define a cor e o texto de status baseado no valor encontrado
+    if ($Valor -eq "N/A") {
+        $TextoStatus = "INATIVO / LEGADO"
+        $Cor = "DarkYellow"
+    } else {
+        $TextoStatus = "ATIVO"
+        $Cor = "Green"
+    }
+    
+    # Exibe a linha formatada
+    Write-Host ("{0,-27} | {1,-12} | {2}" -f $Chave, $Valor, $TextoStatus) -ForegroundColor $Cor
+}
+
+Write-Host ("-" * 55) -ForegroundColor Gray
+Write-Host ""
+Write-Host "[INFO] Para modificar estes valores, utilize o script de aplicação correspondente." -ForegroundColor Gray
+Write-Host "==============================================================" -ForegroundColor Cyan
+
+
+
+
+
 <# EXEMPLO DO OUTPUT ESPERADO:
 
 Cluster Detectado: CDBAAS177985
