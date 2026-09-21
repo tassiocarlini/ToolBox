@@ -26,4 +26,4 @@ SELECT
     rs.last_received_time
 FROM sys.dm_hadr_database_replica_states rs
 JOIN sys.availability_replicas r ON rs.replica_id = r.replica_id
-WHERE r.replica_server_name = 'CT27PL143739A\PROTHEUS';
+--WHERE r.replica_server_name = 'CT27PL143739A\PROTHEUS';
