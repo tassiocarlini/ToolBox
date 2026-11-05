@@ -1,0 +1,43 @@
+SELECT parent_node_id, scheduler_id, cpu_id,
+       current_tasks_count, runnable_tasks_count, active_workers_count
+FROM sys.dm_os_schedulers
+WHERE status = 'VISIBLE ONLINE'
+ORDER BY parent_node_id, scheduler_id;
+
+SELECT t.session_id, s.parent_node_id, COUNT(*) AS tasks
+FROM sys.dm_os_tasks t
+JOIN sys.dm_os_schedulers s ON s.scheduler_id = t.scheduler_id
+WHERE t.session_id IS NOT NULL
+GROUP BY t.session_id, s.parent_node_id
+ORDER BY tasks DESC;
+
+
+SELECT r.session_id, r.status, r.cpu_time, r.total_elapsed_time,
+       r.wait_type, r.dop, DB_NAME(r.database_id) AS db,
+       r.command, st.text, qp.query_plan
+FROM sys.dm_exec_requests r
+CROSS APPLY sys.dm_exec_sql_text(r.sql_handle) st
+OUTER APPLY sys.dm_exec_query_plan(r.plan_handle) qp
+WHERE r.session_id <> @@SPID
+ORDER BY r.cpu_time DESC;
+
+
+SELECT TOP 20 qs.total_worker_time/1000 AS cpu_ms_total,
+       qs.execution_count,
+       qs.total_worker_time/qs.execution_count/1000 AS cpu_ms_avg,
+       SUBSTRING(st.text, qs.statement_start_offset/2 + 1,
+         (CASE qs.statement_end_offset WHEN -1 THEN DATALENGTH(st.text)
+          ELSE qs.statement_end_offset END - qs.statement_start_offset)/2 + 1) AS stmt
+FROM sys.dm_exec_query_stats qs
+CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) st
+ORDER BY qs.total_worker_time DESC;
+
+
+SELECT TOP 10 wait_type, wait_time_ms, signal_wait_time_ms
+FROM sys.dm_os_wait_stats
+WHERE wait_type IN ('SOS_SCHEDULER_YIELD','CXPACKET','CXCONSUMER','THREADPOOL')
+ORDER BY wait_time_ms DESC;
+
+SELECT name, value_in_use FROM sys.configurations
+WHERE name IN ('max degree of parallelism','cost threshold for parallelism',
+               'max server memory (MB)','affinity mask');
